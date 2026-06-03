@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>xarm6_pointer</name>
+  <version>0.0.0</version>
+  <description>
+    Point the UFACTORY xArm6 end-effector at an arbitrary target point in
+    space (without touching it) using MoveIt 2. Targets are supplied at
+    runtime on a topic, so the same node can aim at many different points
+  </description>
+  <maintainer email="ecrookst@andrew.cmu.edu">kantorlab-1</maintainer>
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>shape_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+ 
+  <exec_depend>xarm_moveit_config</exec_depend>
+  <exec_depend>uf_ros_lib</exec_depend>
+ 
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

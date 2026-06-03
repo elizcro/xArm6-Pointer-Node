@@ -1,0 +1,14 @@
+# Ignore ROS 2 build artifact directories
+build/
+install/
+log/
+
+# Ignore local environment or compiler files
+.vscode/
+.idea/
+*.pyc
+__pycache__/
+.DS_Store
+
+# Ignore user-specific configurations
+*.user
