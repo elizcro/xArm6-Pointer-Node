@@ -54,6 +54,11 @@ def launch_setup(context, *args, **kwargs):
     pedestal_size_z = float(LaunchConfiguration('pedestal_size_z').perform(context))
     pedestal_offset_x = float(LaunchConfiguration('pedestal_offset_x').perform(context))
     pedestal_offset_y = float(LaunchConfiguration('pedestal_offset_y').perform(context))
+    wall_size_x = float(LaunchConfiguration('wall_size_x').perform(context))
+    wall_size_y = float(LaunchConfiguration('wall_size_y').perform(context))
+    wall_size_z = float(LaunchConfiguration('wall_size_z').perform(context))
+    wall_offset_x = float(LaunchConfiguration('wall_offset_x').perform(context))
+    wall_offset_y = float(LaunchConfiguration('wall_offset_y').perform(context))
     
     # Build the xArm6 MoveIt configuration with our tool included via the
     # xArm's built-in add_other_geometry mechanism. The xacros handle
@@ -100,6 +105,11 @@ def launch_setup(context, *args, **kwargs):
                 'pedestal_size_z': pedestal_size_z,
                 'pedestal_offset_x': pedestal_offset_x,
                 'pedestal_offset_y': pedestal_offset_y,
+                'wall_size_x': wall_size_x,
+                'wall_size_y': wall_size_y,
+                'wall_size_z': wall_size_z,
+                'wall_offset_x': wall_offset_x,
+                'wall_offset_y': wall_offset_y,
             },
         ],
     )
@@ -143,16 +153,26 @@ def generate_launch_description():
                               description='Length of the mounted tool along link_eef +Z (m). Default 6.5 in = 0.1651 m'),
         DeclareLaunchArgument('tool_radius', default_value='0.01905',
                               description='cylinder radius for the sprayer tool (m)'),
-        DeclareLaunchArgument('pedestal_size_x', default_value = '0.4636',
-                              description = 'Pedestal X dimension in m (default 18.25 in = 0.4636 m)'),
-        DeclareLaunchArgument('pedestal_size_y', default_value = '0.4572',
-                              description = 'Pedestal Y dimension in m (default 18.00 in = 0.4572 m)'),
-        DeclareLaunchArgument('pedestal_size_z', default_value='1.0033',
-                              description='Pedestal Z dimension (height) in m (default 39.50 in = 1.0033 m)'),
-        DeclareLaunchArgument('pedestal_offset_x', default_value='0.0',
+        DeclareLaunchArgument('pedestal_size_x', default_value = '0.762',
+                              description = 'Pedestal X dimension in m (30in in m)'),
+        DeclareLaunchArgument('pedestal_size_y', default_value = '1.524',
+                              description = 'Pedestal Y dimension in m (5ft in m)'),
+        DeclareLaunchArgument('pedestal_size_z', default_value='0.8382',
+                              description='Pedestal Z dimension (height) in m (33in to m)'),
+        DeclareLaunchArgument('pedestal_offset_x', default_value='0.0127',
                               description='Pedestal center offset from arm base in X (m)'),
-        DeclareLaunchArgument('pedestal_offset_y', default_value='0.1651',
-                              description='Pedestal center offset from arm base in Y (m). Arm 15.5 in 18 in edge'),
+        DeclareLaunchArgument('pedestal_offset_y', default_value='-0.6858',
+                              description='Pedestal center offset from arm base in Y (m)'),
+        DeclareLaunchArgument('wall_size_x', default_value='0.1',
+                              description='Wall x dimension in m)'),
+        DeclareLaunchArgument('wall_size_y', default_value='3.048',
+                              description='Wall y dimension in m)'),
+        DeclareLaunchArgument('wall_size_z', default_value='2.0',
+                              description='Wall height dimension in m)'),
+        DeclareLaunchArgument('wall_offset_x', default_value='-0.3937',
+                              description='Wall center offset from arm base in X (m)'),
+        DeclareLaunchArgument('wall_offset_y', default_value='0.0',
+                              description='Wall center offset from arm base in Y (m)'),
 
         OpaqueFunction(function=launch_setup),
     ])

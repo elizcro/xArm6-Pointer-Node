@@ -98,11 +98,17 @@ int main(int argc, char ** argv)
   const int roll_samples = static_cast<int>(get_double("roll_samples", 12.0));  // # of roll angles to try about the pointing axis
  
   //pedestal the xarm is sitting on
-  const double pedestal_size_x = get_double("pedestal_size_x", 0.4636);
-  const double pedestal_size_y = get_double("pedestal_size_y", 0.4572);
-  const double pedestal_size_z = get_double("pedestal_size_z", 1.0033);
-  const double pedestal_offset_x = get_double("pedestal_offset_x", 0.0);     // m, pedestal center offset from arm base in X (~ centered)
-  const double pedestal_offset_y = get_double("pedestal_offset_y", 0.1651);  // m, pedestal center offset in Y 18 in side
+  const double pedestal_size_x = get_double("pedestal_size_x", 0.762);
+  const double pedestal_size_y = get_double("pedestal_size_y", 1.524);
+  const double pedestal_size_z = get_double("pedestal_size_z", 0.8382);
+  const double pedestal_offset_x = get_double("pedestal_offset_x", 0.0127); // m, pedestal center offset from arm base in X (~ centered)
+  const double pedestal_offset_y = get_double("pedestal_offset_y", -0.6858); // m, pedestal center offset in Y 5ft in side
+  //wall the xarm is next to 
+  const double wall_size_x = get_double("wall_size_x", 0.1);
+  const double wall_size_y = get_double("wall_size_y", 3.048);
+  const double wall_size_z = get_double("wall_size_z", 0.8382);
+  const double wall_offset_x = get_double("wall_offset_x", 0.0127);
+  const double wall_offset_y = get_double("wall_offset_y", 0.0);
 
   // ---- Spin the node in the background so MoveGroupInterface works ---------
   rclcpp::executors::SingleThreadedExecutor executor;
@@ -131,6 +137,9 @@ int main(int argc, char ** argv)
   RCLCPP_INFO(LOGGER, "Pedestal       : %.3f x %.3f x %.3f m, centered at (%.3f, %.3f) (top at z=0)",
               pedestal_size_x, pedestal_size_y, pedestal_size_z,
               pedestal_offset_x, pedestal_offset_y);
+  RCLCPP_INFO(LOGGER, "Wall       : %.3f x %.3f x %.3f m, centered at (%.3f, %.3f) (top at z=0)",
+              wall_size_x, wall_size_y, wall_size_z,
+              wall_offset_x, wall_offset_y);
   RCLCPP_INFO(LOGGER, "Vel/Acc scaling: %.2f / %.2f", vel_scale, acc_scale);
 
   // ---- Pedestal mounting structure(top surface at base z=0) ---
@@ -153,6 +162,28 @@ int main(int argc, char ** argv)
     psi.applyCollisionObject(pedestal);
     RCLCPP_INFO(LOGGER, "Added pedestal structure collision object (%.3f x %.3f x %.3f m).",
                 pedestal_size_x, pedestal_size_y, pedestal_size_z);
+  }
+  
+    // Wall next to the table (top surface at base z=0) ---
+  {
+    moveit_msgs::msg::CollisionObject wall;
+    wall.header.frame_id = planning_frame;
+    wall.id = "wall";
+    shape_msgs::msg::SolidPrimitive box;
+    box.type = box.BOX;
+    box.dimensions = {wall_size_x, wall_size_y, wall_size_z};
+    geometry_msgs::msg::Pose box_pose;
+    box_pose.orientation.w = 1.0;
+    box_pose.position.x = wall_offset_x;
+    box_pose.position.y = wall_offset_y;
+    //top face at z = -0.001 (1 mm safety  gap below the base mounting plate)
+    box_pose.position.z = wall_size_z / 2.0 - pedestal_size_z - 0.001;
+    wall.primitives.push_back(box);
+    wall.primitive_poses.push_back(box_pose);
+    wall.operation = wall.ADD;
+    psi.applyCollisionObject(wall);
+    RCLCPP_INFO(LOGGER, "Added wall collision object (%.3f x %.3f x %.3f m).",
+                wall_size_x, wall_size_y, wall_size_z);
   }
 
   // ---- subscribe to /tf and /tf_static (only used if a target arrives in a non-planning frame) ---------
@@ -184,7 +215,6 @@ int main(int argc, char ** argv)
     // Targets published from command line are always in the link_base (planning) frame
 
     // Target converted to a vector
-    const tf2::Vector3 target(p_planning.point.x, p_planning.point.y, p_planning.point.z);
     const double target_r = target.length(); //distance from base origin to target
 
     RCLCPP_INFO(LOGGER, "Target in %s: (%.3f, %.3f, %.3f), |r|=%.3f m",
@@ -229,12 +259,14 @@ int main(int argc, char ** argv)
     y_axis.normalize();
     // x_axis, y_axis, and n_hat form orthonormal basis
 
-    // Columns of the rotation matrix are the tool axes expressed in the base.
-    // This is the "base" orientation (roll = 0 about the pointing axis).
+    // Rotation matrix: columns are the tool axes expressed in the base
+    // This is the "base" orientation (roll = 0 about the pointing axis)
     tf2::Matrix3x3 rot(
       x_axis.x(), y_axis.x(), n_hat.x(),
       x_axis.y(), y_axis.y(), n_hat.y(),
       x_axis.z(), y_axis.z(), n_hat.z());
+    
+    //convert rotation matrix to a quaternion
     tf2::Quaternion base_q;
     rot.getRotation(base_q);
     base_q.normalize();
@@ -269,6 +301,7 @@ int main(int argc, char ** argv)
       RCLCPP_WARN(LOGGER, "position_only mode: ignoring pointing orientation.");
       planned = (move_group.plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
     } else {
+      // roll sampling
       const int n = std::max(1, roll_samples);
       for (int i = 0; i < n && rclcpp::ok(); ++i) {
         // Spread samples over a full turn, starting at 0 (most "natural").
