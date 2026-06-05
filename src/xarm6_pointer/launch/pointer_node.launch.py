@@ -139,8 +139,10 @@ def generate_launch_description():
                               description='Acceleration scaling 0..1'),
         DeclareLaunchArgument('goal_pos_tol', default_value='0.01',
                               description='Goal position tolerance (m)'),
-        DeclareLaunchArgument('goal_orient_tol', default_value='0.2',
-                              description='Goal orientation tolerance (rad); roll is free for pointing'),
+        DeclareLaunchArgument('goal_orient_tol', default_value='0.01',
+                              description='Goal orientation tolerance (rad) about EACH axis — keep TIGHT. '
+                                          'Roll freedom comes from the roll sweep in the node, NOT from this '
+                                          'tolerance. A loose value here lets the pointing axis itself drift.'),
         DeclareLaunchArgument('planning_time', default_value='2.0',
                               description='Max planning time per roll sample (s)'),
         DeclareLaunchArgument('position_only', default_value='false',

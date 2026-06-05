@@ -93,7 +93,7 @@ int main(int argc, char ** argv)
   const double planning_time = get_double("planning_time", 2.0); // s per roll sample
   const int planning_attempts = static_cast<int>(get_double("planning_attempts", 10.0));
   const double goal_pos_tol = get_double("goal_pos_tol", 0.01);       // m
-  const double goal_orient_tol = get_double("goal_orient_tol", 0.2);  // rad (~11 deg); roll is free for pointing
+  const double goal_orient_tol = get_double("goal_orient_tol", 0.01);  // rad about EACH axis, keep tight 
   const bool position_only = get_bool("position_only", false);        // diagnostic: ignore orientation
   const int roll_samples = static_cast<int>(get_double("roll_samples", 12.0));  // # of roll angles to try about the pointing axis
  
@@ -142,7 +142,7 @@ int main(int argc, char ** argv)
               wall_offset_x, wall_offset_y);
   RCLCPP_INFO(LOGGER, "Vel/Acc scaling: %.2f / %.2f", vel_scale, acc_scale);
 
-  // ---- Pedestal mounting structure(top surface at base z=0) ---
+  // Pedestal mounting structure(top surface at base z=0) ---
   {
     moveit_msgs::msg::CollisionObject pedestal;
     pedestal.header.frame_id = planning_frame;
@@ -186,7 +186,7 @@ int main(int argc, char ** argv)
                 wall_size_x, wall_size_y, wall_size_z);
   }
 
-  // ---- subscribe to /tf and /tf_static (only used if a target arrives in a non-planning frame) ---------
+  // subscribe to /tf and /tf_static (only used if a target arrives in a non-planning frame) ---------
   auto tf_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
   [[maybe_unused]] auto tf_listener =
     std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
@@ -209,7 +209,7 @@ int main(int argc, char ** argv)
   RCLCPP_INFO(LOGGER, "Ready. Publish a target on '%s' (PointStamped).",
               target_topic.c_str());
 
-  // ---- Core: turn a target point into a "pointing" pose and execute -------
+  // Core: turn a target point into a "pointing" pose and execute -------
   auto process = [&](const geometry_msgs::msg::PointStamped & pin) {
     const tf2::Vector3 target(pin.point.x, pin.point.y, pin.point.z);
     // Targets published from command line are always in the link_base (planning) frame
