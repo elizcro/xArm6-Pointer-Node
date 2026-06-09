@@ -16,6 +16,7 @@ class WeedSequencerNode(Node):
 
         self.queue: deque[PointStamped] = deque()
         self.waiting_for_result = False
+        self.batch_accepted = False
 
         self.sub_weeds = self.create_subscription(
             PoseArray, '/detected_weeds', self.weeds_callback, 10)
@@ -23,28 +24,24 @@ class WeedSequencerNode(Node):
             Bool, '/pointer/result', self.result_callback, 10)
         self.pub_target = self.create_publisher(
             PointStamped, 'target_point', 10)
-        self.pub_batch_done = self.create_publisher(
-            Bool, '/sequencer/batch_done', 10)
 
-        self.get_logger().info('Weed sequencer ready')
+        self.get_logger().info('Weed sequencer ready — waiting for first batch')
 
     def weeds_callback(self, msg: PoseArray):
-        if self.waiting_for_result:
-            self.get_logger().warn(
-                f'Received {len(msg.poses)} new detections while arm is still moving — '
-                f'replacing queue ({len(self.queue)} remaining)')
+        if self.batch_accepted:
+            self.get_logger().info('Already accepted a batch — ignoring new detections')
+            return
 
-        self.queue.clear()
+        self.batch_accepted = True
+
         for pose in msg.poses:
             pt = PointStamped()
             pt.header.frame_id = self.target_frame
             pt.point = pose.position
             self.queue.append(pt)
 
-        self.get_logger().info(f'Queued {len(self.queue)} weed targets')
-
-        if not self.waiting_for_result:
-            self.send_next()
+        self.get_logger().info(f'Accepted batch of {len(self.queue)} weed targets')
+        self.send_next()
 
     def result_callback(self, msg: Bool):
         if msg.data:
@@ -58,9 +55,6 @@ class WeedSequencerNode(Node):
     def send_next(self):
         if len(self.queue) == 0:
             self.get_logger().info('Batch complete — all targets processed')
-            done_msg = Bool()
-            done_msg.data = True
-            self.pub_batch_done.publish(done_msg)
             return
 
         target = self.queue.popleft()
