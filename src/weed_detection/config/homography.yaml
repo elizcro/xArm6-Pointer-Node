@@ -1,0 +1,10 @@
+weed_detector:
+  ros__parameters:
+    # 3x3 homography matrix (row-major) from calib_camera.py
+    # Maps pixel (u, v) to ground-plane (x_cm, y_cm)
+    # Replace these with your calibration output
+    homography: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    ground_plane_z: 0.0
+    cluster_interval: 20
+    dbscan_eps: 5.0
+    dbscan_min_fraction: 0.8
