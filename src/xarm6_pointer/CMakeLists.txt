@@ -18,6 +18,7 @@ find_package(shape_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 
 add_executable(point_at_target src/point_at_target.cpp)
 target_include_directories(point_at_target PUBLIC
@@ -34,6 +35,7 @@ ament_target_dependencies(point_at_target
   tf2
   tf2_ros
   tf2_geometry_msgs
+  std_msgs
 )
 
 install(TARGETS point_at_target

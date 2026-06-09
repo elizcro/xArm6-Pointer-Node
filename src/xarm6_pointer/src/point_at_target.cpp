@@ -40,6 +40,8 @@
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
 
+#include <std_msgs/msg/bool.hpp>
+
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Vector3.h>
@@ -206,10 +208,18 @@ int main(int argc, char ** argv)
       pending = *msg;  // keep only the latest; ignore backlog while moving
     });
 
+  auto result_pub = node->create_publisher<std_msgs::msg::Bool>("/pointer/result", 10);
+
   RCLCPP_INFO(LOGGER, "Ready. Publish a target on '%s' (PointStamped).",
               target_topic.c_str());
 
   // Core: turn a target point into a "pointing" pose and execute -------
+  auto publish_result = [&](bool success) {
+    std_msgs::msg::Bool msg;
+    msg.data = success;
+    result_pub->publish(msg);
+  };
+
   auto process = [&](const geometry_msgs::msg::PointStamped & pin) {
     const tf2::Vector3 target(pin.point.x, pin.point.y, pin.point.z);
     // Targets published from command line are always in the link_base (planning) frame
@@ -223,6 +233,7 @@ int main(int argc, char ** argv)
     // Check if it's a valid, reachable targets
     if (target_r < 1e-3) {
       RCLCPP_WARN(LOGGER, "Target is at the base origin; cannot define a pointing direction. Skipping.");
+      publish_result(false);
       return;
     }
 
@@ -239,6 +250,7 @@ int main(int argc, char ** argv)
       RCLCPP_WARN(LOGGER,
                   "Standoff pose at |r|=%.3f m is outside the safe reach envelope [%.2f, %.2f] m. Skipping.",
                   ee_r, min_reach, max_reach);
+      publish_result(false);
       return;
     }
 
@@ -334,6 +346,7 @@ int main(int argc, char ** argv)
                   "MoveIt could not find a valid plan at any roll for this target "
                   "(unreachable, joint limits, or collision). Not moving.");
       move_group.clearPoseTargets();
+      publish_result(false);
       return;
     }
 
@@ -347,6 +360,7 @@ int main(int argc, char ** argv)
     } else {
       RCLCPP_WARN(LOGGER, "Execution did not report success. Check the robot/controllers.");
     }
+    publish_result(executed);
   };
 
   // ---- Main loop: process the most recent target, one at a time -----------
