@@ -23,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'weed_detector = weed_detection.weed_detector_node:main',
+            'weed_sequencer = weed_detection.weed_sequencer_node:main',
         ],
     },
 )

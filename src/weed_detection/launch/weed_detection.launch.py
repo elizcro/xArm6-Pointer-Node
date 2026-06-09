@@ -19,4 +19,10 @@ def generate_launch_description():
             parameters=[config],
             output='screen',
         ),
+        Node(
+            package='weed_detection',
+            executable='weed_sequencer',
+            name='weed_sequencer',
+            output='screen',
+        ),
     ])
