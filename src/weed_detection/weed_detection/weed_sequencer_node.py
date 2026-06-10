@@ -54,7 +54,8 @@ class WeedSequencerNode(Node):
 
     def send_next(self):
         if len(self.queue) == 0:
-            self.get_logger().info('Batch complete — all targets processed')
+            self.get_logger().info('Batch complete — ready for the next batch')
+            self.batch_accepted = False   # allow the next detection batch in
             return
 
         target = self.queue.popleft()
