@@ -43,13 +43,30 @@ class WeedDetectorNode(Node):
         ones = np.ones((n, 1))
         homogeneous = np.hstack([pixels, ones])
         projected = (self.homography @ homogeneous.T).T
+        
+        for i in range(n):
+            a_i, b_i, w_i = projected[i, 0], projected[i, 1], projected[i, 2]
+            flag = '   <-- denominator<=0: ABOVE HORIZON, garbage' if w_i <= 0.0 else ''
+            self.get_logger().info(
+                f'px(u={pixels[i,0]:.1f}, v={pixels[i,1]:.1f})  '
+                f'denom={w_i:+.4f}  ->  x={a_i/w_i:.1f} cm, y={b_i/w_i:.1f} cm{flag}')
+        
+        valid = projected[:, 2] > 1e-6
+        projected = projected[valid]
+        pixels = pixels[valid]
+        n = projected.shape[0]
         projected[:, 0] /= projected[:, 2]
         projected[:, 1] /= projected[:, 2]
+        
         result = np.column_stack([projected[:, 0], projected[:, 1], np.full(n, self.ground_z)])
         return result
 
     def image_callback(self, msg: Image):
         bgr = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        
+        if self.frame_count == 0:          # frame_count is still 0 on the first call
+            self.get_logger().info(
+                f'Live GoPro frame: width={bgr.shape[1]} px, height={bgr.shape[0]} px')
 
         points = detect_weeds(bgr)
         self.point_readings.append(points)
