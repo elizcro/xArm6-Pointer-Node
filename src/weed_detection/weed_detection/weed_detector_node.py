@@ -4,6 +4,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import PoseArray, Pose
 from cv_bridge import CvBridge
+import cv2
 
 from .detect_weeds import detect_weeds, choose_weeds
 
@@ -39,13 +40,10 @@ class WeedDetectorNode(Node):
 
     def pixel_to_ground(self, pixels: np.ndarray) -> np.ndarray:
         """Apply homography to (N, 2) pixel coords, returning (N, 3) ground-plane points in cm."""
-        n = pixels.shape[0]
-        ones = np.ones((n, 1))
-        homogeneous = np.hstack([pixels, ones])
-        projected = (self.homography @ homogeneous.T).T
-        projected[:, 0] /= projected[:, 2]
-        projected[:, 1] /= projected[:, 2]
-        result = np.column_stack([projected[:, 0], projected[:, 1], np.full(n, self.ground_z)])
+        reshaped = pixels[:, np.newaxis, :] # opencv needs these differently
+        actual_points = cv2.perspectiveTransform(reshaped, self.homography)
+        actual_points = actual_points.squeeze(axis=1) # (N, 1, 2) -> (N, 2)
+        result = np.column_stack([actual_points[:, 0], actual_points[:, 1], np.full(actual_points.shape[0], self.ground_z)])
         return result
 
     def image_callback(self, msg: Image):
