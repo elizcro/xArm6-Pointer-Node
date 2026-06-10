@@ -68,6 +68,8 @@ class WeedDetectorNode(Node):
 
         ground_points = self.pixel_to_ground(clustered)
 
+        self.get_logger().info(f"Clustered: {clustered}, ground_points: {ground_points}")
+
         pose_array = PoseArray()
         pose_array.header.stamp = msg.header.stamp
         pose_array.header.frame_id = msg.header.frame_id
