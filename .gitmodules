@@ -1,0 +1,3 @@
+[submodule "src/GoPro-ROS2"]
+	path = src/GoPro-ROS2
+	url = https://github.com/sandeepzachariah/GoPro-ROS2.git
