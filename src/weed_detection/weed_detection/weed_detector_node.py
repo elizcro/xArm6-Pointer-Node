@@ -40,11 +40,12 @@ class WeedDetectorNode(Node):
 
     def pixel_to_ground(self, pixels: np.ndarray) -> np.ndarray:
         """Apply homography to (N, 2) pixel coords, returning (N, 3) ground-plane points in cm."""
-        reshaped = pixels[np.newaxis, :, :] # opencv needs these differently
+        reshaped = pixels[:, np.newaxis, :] # opencv needs these differently
         self.get_logger().info(f"[PixelToGround] Reshaped: {reshaped}")
+        self.get_logger().info(f"[PixelToGround] Homography: {self.homography}")
         actual_points = cv2.perspectiveTransform(reshaped, self.homography)
         self.get_logger().info(f"[PixelToGround] ActualPoints: {actual_points}")
-        actual_points = actual_points.squeeze(axis=0) # (N, 1, 2) -> (N, 2)
+        actual_points = actual_points.squeeze(axis=1) # (N, 1, 2) -> (N, 2)
         self.get_logger().info(f"[PixelToGround] Squeezed: {actual_points}")
         result = np.column_stack([actual_points[:, 0], actual_points[:, 1], np.full(actual_points.shape[0], self.ground_z)])
         self.get_logger().info(f"[PixelToGround] Result: {result}")
