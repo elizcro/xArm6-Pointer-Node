@@ -5,6 +5,8 @@ if [ -n "$TMUX" ]; then
     exit 1
 fi
 
+set -e
+
 if [[ $(tmux has-session -t "gopro-process") == 0 ]]; then
     echo "GoPro server is running. You can attach to it using 'tmux attach-session -t gopro-process'"
 else
