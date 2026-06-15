@@ -3,7 +3,7 @@ from collections import deque
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseArray, PointStamped
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Empty
 
 
 class WeedSequencerNode(Node):
@@ -24,6 +24,8 @@ class WeedSequencerNode(Node):
             Bool, '/pointer/result', self.result_callback, 10)
         self.pub_target = self.create_publisher(
             PointStamped, 'target_point', 10)
+        self.pub_home = self.create_publisher(
+             Empty, '/pointer/home', 10)
 
         self.get_logger().info('Weed sequencer ready — waiting for first batch')
 
@@ -54,7 +56,8 @@ class WeedSequencerNode(Node):
 
     def send_next(self):
         if len(self.queue) == 0:
-            self.get_logger().info('Batch complete — all targets processed')
+            self.get_logger().info('Batch complete — all targets processed, sending arm home')
+            self.pub_home.publish(Empty())
             return
 
         target = self.queue.popleft()
