@@ -15,12 +15,14 @@ def segment_and_box_green(bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     h_high = 150
     min_area = 100
 
-    hsv_mask = cv2.inRange(hsv, (h_low, 0, 0), (h_high, 255, 255))
+    hsv_mask = cv2.inRange(hsv, (h_low, 60, 40), (h_high, 255, 255))
 
     exg = 2 * bgr[:, :, 1] - bgr[:, :, 2] - bgr[:, :, 0]
     exg_mask = cv2.inRange(exg, exg_low, exg_high)
 
     mask = hsv_mask & exg_mask
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((21, 21), np.uint8))
 
     _, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
 
@@ -35,5 +37,6 @@ def segment_and_box_green(bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     bboxes = kept_stats[:, :4]
 
     mask = np.clip(mask, 0, 1).astype(np.uint8)
+    
 
     return mask, bboxes

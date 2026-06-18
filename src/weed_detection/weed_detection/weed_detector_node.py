@@ -7,6 +7,7 @@ from cv_bridge import CvBridge
 import cv2
 
 from .detect_weeds import detect_weeds, choose_weeds
+from .segment_green import segment_and_box_green
 
 
 class WeedDetectorNode(Node):
@@ -32,6 +33,10 @@ class WeedDetectorNode(Node):
         self.bridge = CvBridge()
         self.frame_count = 0
         self.point_readings: list[np.ndarray] = []
+        
+        self.debug_view = True
+        self.last_clustered = None
+        self.last_ground = None
 
         self.sub = self.create_subscription(Image, 'go_pro/image', self.image_callback, 10)
         self.pub = self.create_publisher(PoseArray, '/detected_weeds', 10)
@@ -50,13 +55,42 @@ class WeedDetectorNode(Node):
         result = np.column_stack([actual_points[:, 0], actual_points[:, 1], np.full(actual_points.shape[0], self.ground_z)])
         self.get_logger().info(f"[PixelToGround] Result: {result}")
         return result
+        
+    def show_debug(self, bgr):
+        debug = bgr.copy()
+        
+        # 1) what counts as "green", plus the per-frame boxes
+        try:
+            mask, bboxes = segment_and_box_green(bgr)
+            m = mask.astype(bool)
+            debug[m] = (0.5 * debug[m] + np.array([0, 128, 0])).astype(np.uint8)
+            for (x, y, w, h) in bboxes:                 # adjust if your bboxes are x1,y1,x2,y2
+                cv2.rectangle(debug, (int(x), int(y)), (int(x + w), int(y + h)), (0, 165, 255), 2)
+        except Exception as e:
+            self.get_logger().warn(f'debug overlay failed: {e}')
+
+        # 2) the detections that actually got published, labeled with ground (x,y) cm
+        if self.last_clustered is not None and self.last_ground is not None:
+            for (u, v), g in zip(self.last_clustered, self.last_ground):
+                 p = (int(u), int(v))
+                 cv2.circle(debug, p, 6, (0, 0, 255), -1)
+                 cv2.putText(debug, f'({g[0]:.0f},{g[1]:.0f})', (p[0] + 8, p[1]),
+                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+        cv2.imshow('weed detection', debug)
+        cv2.waitKey(1)
 
     def image_callback(self, msg: Image):
         bgr = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
         points = detect_weeds(bgr)
+        # debug info
+        self.get_logger().info(f'detect_weeds returned {len(points)} points: {points}')
         self.point_readings.append(points)
         self.frame_count += 1
+        
+        if self.debug_view:
+            self.show_debug(bgr)
 
         if self.frame_count % self.cluster_interval != 0:
             return
@@ -72,6 +106,9 @@ class WeedDetectorNode(Node):
             return
 
         ground_points = self.pixel_to_ground(clustered)
+        self.last_clustered = clustered
+        self.last_ground = ground_points
+        
 
         self.get_logger().info(f"Clustered: {clustered}, ground_points: {ground_points}")
 
