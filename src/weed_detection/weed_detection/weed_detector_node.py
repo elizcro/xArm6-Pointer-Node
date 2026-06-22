@@ -96,6 +96,8 @@ class WeedDetectorNode(Node):
         cv2.waitKey(1)
 
     def cam_info_callback(self, msg: CameraInfo):
+        if self.cam_P is None:
+            self.get_logger().info('Received first CameraInfo; camera intrinsics initialized')
         P = np.array(msg.p, dtype=np.float64)
         P = np.reshape(P, (3, 4))
         self.cam_P = P
