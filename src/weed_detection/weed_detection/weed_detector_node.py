@@ -1,7 +1,7 @@
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseArray, Pose
 from cv_bridge import CvBridge
 import cv2
@@ -14,17 +14,13 @@ class WeedDetectorNode(Node):
     def __init__(self):
         super().__init__('weed_detector')
 
-        self.declare_parameter('homography', [0.0] * 9)
         self.declare_parameter('ground_plane_z', 0.0)
+        self.declare_parameter('camera_angle_deg', 0.0)
         self.declare_parameter('cluster_interval', 20)
         self.declare_parameter('dbscan_eps', 5.0)
         self.declare_parameter('dbscan_min_fraction', 0.8)
 
-        h_flat = self.get_parameter('homography').get_parameter_value().double_array_value
-        if len(h_flat) != 9:
-            self.get_logger().fatal(f'homography parameter must have 9 elements, got {len(h_flat)}')
-            raise ValueError('homography parameter must have 9 elements')
-        self.homography = np.array(h_flat).reshape(3, 3)
+        self.camera_angle_degrees = self.get_parameter('camera_angle_deg').get_parameter_value().double_value
         self.ground_z = self.get_parameter('ground_plane_z').get_parameter_value().double_value
         self.cluster_interval = self.get_parameter('cluster_interval').get_parameter_value().integer_value
         self.dbscan_eps = self.get_parameter('dbscan_eps').get_parameter_value().double_value
@@ -38,22 +34,34 @@ class WeedDetectorNode(Node):
         self.last_clustered = None
         self.last_ground = None
 
-        self.sub = self.create_subscription(Image, 'go_pro/image', self.image_callback, 10)
+        self.sub = self.create_subscription(Image, 'go_pro/image_rect_color', self.image_callback, 10)
+        self.sub_info = self.create_subscription(CameraInfo, 'go_pro/camera_info', self.cam_info_callback, 10)
         self.pub = self.create_publisher(PoseArray, '/detected_weeds', 10)
 
         self.get_logger().info('Weed detector ready')
 
+        self.cam_P = None
+
     def pixel_to_ground(self, pixels: np.ndarray) -> np.ndarray:
         """Apply homography to (N, 2) pixel coords, returning (N, 3) ground-plane points in cm."""
-        reshaped = pixels[:, np.newaxis, :] # opencv needs these differently
-        self.get_logger().info(f"[PixelToGround] Reshaped: {reshaped}")
-        self.get_logger().info(f"[PixelToGround] Homography: {self.homography}")
-        actual_points = cv2.perspectiveTransform(reshaped, self.homography)
-        self.get_logger().info(f"[PixelToGround] ActualPoints: {actual_points}")
-        actual_points = actual_points.squeeze(axis=1) # (N, 1, 2) -> (N, 2)
-        self.get_logger().info(f"[PixelToGround] Squeezed: {actual_points}")
-        result = np.column_stack([actual_points[:, 0], actual_points[:, 1], np.full(actual_points.shape[0], self.ground_z)])
-        self.get_logger().info(f"[PixelToGround] Result: {result}")
+        P = self.cam_P
+        if P is None:
+            self.get_logger().warn('pixel_to_ground called before camera P (intrinsics) initialized')
+            return np.zeros((pixels.shape[0], 3), dtype=np.float64)
+        K_rect = P[:, :3].copy()
+        K_rect[[0, 1, 2, 2], [1, 0, 0, 1]] = 0
+        K_rect[2, 2] = 1
+
+        H = K_rect @ np.array([[1, 0, 0],
+                               [0, np.cos(np.deg2rad(self.camera_angle_degrees)), -self.ground_z * np.sin(np.deg2rad(self.camera_angle_degrees))],
+                               [0, -np.sin(np.deg2rad(self.camera_angle_degrees)), self.ground_z * np.sin(np.deg2rad(self.camera_angle_degrees))]])
+        H_inv = np.linalg.inv(H)
+        homogeneous_pixels = np.hstack((pixels, np.ones((pixels.shape[0], 1))))
+
+        result = (H_inv @ homogeneous_pixels.T).T
+        result[:, 0] /= result[:, 2]
+        result[:, 1] /= result[:, 2]
+        result[:, 2] = self.ground_z
         return result
         
     def show_debug(self, bgr):
@@ -79,6 +87,11 @@ class WeedDetectorNode(Node):
 
         cv2.imshow('weed detection', debug)
         cv2.waitKey(1)
+
+    def cam_info_callback(self, msg: CameraInfo):
+        P = np.array(msg.data.p, dtype=np.float64)
+        P = np.reshape(P, (3, 4))
+        self.cam_P = P
 
     def image_callback(self, msg: Image):
         bgr = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')

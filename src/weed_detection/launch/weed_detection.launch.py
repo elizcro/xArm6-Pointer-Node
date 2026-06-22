@@ -13,6 +13,22 @@ def generate_launch_description():
 
     return LaunchDescription([
         Node(
+            package='camera_cpp',
+            executable='go_pro',
+            name='image_publisher',
+        ),
+        Node(
+            package='image_proc',
+            executable='rectify_node',
+            name='gopro_rectifier',
+            remappings=[
+                ('image', '/go_pro/image'),
+                ('camera_info', '/go_pro/camera_info'),
+                ('image_rect', '/go_pro/image_rect'),
+                ('image_rect_color', '/go_pro/image_rect_color')
+            ]
+        ),
+        Node(
             package='weed_detection',
             executable='weed_detector',
             name='weed_detector',

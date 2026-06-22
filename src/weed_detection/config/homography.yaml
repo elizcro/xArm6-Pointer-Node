@@ -3,8 +3,9 @@ weed_detector:
     # 3x3 homography matrix (row-major) from calib_camera.py
     # Maps pixel (u, v) to ground-plane (x_cm, y_cm)
     # Replace these with your calibration output
-    homography: [1.88513349e-01, -1.14410271e-02, -1.69014846e+02, -9.82324308e-02, -1.59000807e-02, 2.14948971e+02, -1.19982800e-03, 3.04754256e-03, 1.00000000e+00]
     ground_plane_z: -84.0
+    # downward angle of camera from pointing straight (parallel to ground)
+    camera_angle_deg: 35
     cluster_interval: 20
     dbscan_eps: 5.0
     dbscan_min_fraction: 0.8
