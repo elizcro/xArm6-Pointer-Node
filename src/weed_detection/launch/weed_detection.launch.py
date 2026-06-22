@@ -25,7 +25,10 @@ def generate_launch_description():
     image_proc_launch_path = os.path.join(image_proc_share, 'launch', 'image_proc.launch.py')
     include_image_proc = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(image_proc_launch_path),
-        launch_arguments={'camera_namespace': camera_namespace}.items(),
+        launch_arguments={
+            'namespace': camera_namespace,
+            'image_raw': 'image'
+        }.items(),
     )
 
     weed_detector_node = Node(

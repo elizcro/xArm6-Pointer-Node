@@ -35,8 +35,8 @@ class WeedDetectorNode(Node):
         self.last_ground = None
         self.cam_P = None
 
-        self.sub = self.create_subscription(Image, 'go_pro/image_rect_color', self.image_callback, 10)
-        self.sub_info = self.create_subscription(CameraInfo, 'go_pro/camera_info', self.cam_info_callback, 10)
+        self.sub = self.create_subscription(Image, '/go_pro/image_rect_color', self.image_callback, 10)
+        self.sub_info = self.create_subscription(CameraInfo, '/go_pro/camera_info', self.cam_info_callback, 10)
         self.pub = self.create_publisher(PoseArray, '/detected_weeds', 10)
 
         self.get_logger().info('Weed detector ready')
