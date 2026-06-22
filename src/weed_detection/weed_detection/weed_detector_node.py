@@ -33,6 +33,7 @@ class WeedDetectorNode(Node):
         self.debug_view = True
         self.last_clustered = None
         self.last_ground = None
+        self.cam_P = None
 
         self.sub = self.create_subscription(Image, 'go_pro/image_rect_color', self.image_callback, 10)
         self.sub_info = self.create_subscription(CameraInfo, 'go_pro/camera_info', self.cam_info_callback, 10)
@@ -40,21 +41,27 @@ class WeedDetectorNode(Node):
 
         self.get_logger().info('Weed detector ready')
 
-        self.cam_P = None
-
     def pixel_to_ground(self, pixels: np.ndarray) -> np.ndarray:
-        """Apply homography to (N, 2) pixel coords, returning (N, 3) ground-plane points in cm."""
+        """Map (N, 2) pixel coords to (N, 3) ground-plane points in cm."""
         P = self.cam_P
         if P is None:
             self.get_logger().warn('pixel_to_ground called before camera P (intrinsics) initialized')
             return np.zeros((pixels.shape[0], 3), dtype=np.float64)
+
         K_rect = P[:, :3].copy()
+        # should always be the case because image is rectified, but force in case
         K_rect[[0, 1, 2, 2], [1, 0, 0, 1]] = 0
         K_rect[2, 2] = 1
 
-        H = K_rect @ np.array([[1, 0, 0],
-                               [0, np.cos(np.deg2rad(self.camera_angle_degrees)), -self.ground_z * np.sin(np.deg2rad(self.camera_angle_degrees))],
-                               [0, -np.sin(np.deg2rad(self.camera_angle_degrees)), self.ground_z * np.sin(np.deg2rad(self.camera_angle_degrees))]])
+        h = -self.ground_z  # camera height above the ground plane (cm)
+        a = np.deg2rad(self.camera_angle_degrees)
+        ca, sa = np.cos(a), np.sin(a)
+
+        # H = K_rect @ [r1 | r2 | t], with rotation about the camera x-axis by `a`
+        # and t = -R @ C for camera center C at height h.
+        H = K_rect @ np.array([[1,   0,     0.0],
+                               [0, -sa,  h * ca],
+                               [0,  ca,  h * sa]])
         H_inv = np.linalg.inv(H)
         homogeneous_pixels = np.hstack((pixels, np.ones((pixels.shape[0], 1))))
 
@@ -89,7 +96,7 @@ class WeedDetectorNode(Node):
         cv2.waitKey(1)
 
     def cam_info_callback(self, msg: CameraInfo):
-        P = np.array(msg.data.p, dtype=np.float64)
+        P = np.array(msg.p, dtype=np.float64)
         P = np.reshape(P, (3, 4))
         self.cam_P = P
 
