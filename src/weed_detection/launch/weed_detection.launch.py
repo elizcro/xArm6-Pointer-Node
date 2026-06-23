@@ -16,7 +16,7 @@ def generate_launch_description():
     camera_namespace = 'go_pro'
 
     go_pro_share = get_package_share_directory('camera_cpp')
-    go_pro_launch_path = os.path.join(go_pro_share, 'launch', 'go_pro.launch.py')
+    go_pro_launch_path = os.path.join(go_pro_share, 'launch', 'go_pro_launch.py')
     include_go_pro = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(go_pro_launch_path)
     )
