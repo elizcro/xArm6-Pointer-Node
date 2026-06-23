@@ -1,9 +1,9 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetRemap
 
 
 def generate_launch_description():
@@ -17,15 +17,16 @@ def generate_launch_description():
 
     go_pro_share = get_package_share_directory('camera_cpp')
     go_pro_launch_path = os.path.join(go_pro_share, 'launch', 'go_pro_launch.py')
-    include_go_pro = IncludeLaunchDescription(
+    include_go_pro = GroupAction(actions=[SetRemap(src="/go_pro/image", dst="/go_pro/image_raw"),IncludeLaunchDescription(
         PythonLaunchDescriptionSource(go_pro_launch_path)
-    )
+    )])
 
     image_proc_share = get_package_share_directory('image_proc')
     image_proc_launch_path = os.path.join(image_proc_share, 'launch', 'image_proc.launch.py')
     include_image_proc = GroupAction(
         actions=[
-            SetRemap(src="/go_pro/image", dst="image_raw"),
+            SetRemap(src="/go_pro/image", dst="/go_pro/image_raw"),
+            SetRemap(src="/go_pro/image_mono", dst="/go_pro/image_awesome"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(image_proc_launch_path),
                 launch_arguments={
