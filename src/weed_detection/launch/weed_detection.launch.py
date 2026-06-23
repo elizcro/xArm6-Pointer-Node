@@ -23,12 +23,16 @@ def generate_launch_description():
 
     image_proc_share = get_package_share_directory('image_proc')
     image_proc_launch_path = os.path.join(image_proc_share, 'launch', 'image_proc.launch.py')
-    include_image_proc = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(image_proc_launch_path),
-        launch_arguments={
-            'namespace': camera_namespace,
-            'image_raw': 'image'
-        }.items(),
+    include_image_proc = GroupAction(
+        actions=[
+            SetRemap(src="/go_pro/image", dst="image_raw"),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(image_proc_launch_path),
+                launch_arguments={
+                    'namespace': camera_namespace,
+                }.items(),
+            )
+        ]
     )
 
     weed_detector_node = Node(
