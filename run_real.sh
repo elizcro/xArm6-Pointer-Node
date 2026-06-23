@@ -31,10 +31,10 @@ tmux kill-session -t ros2-xarm 2>/dev/null || true; tmux new -d -s ros2-xarm
 
 SOURCE_COMMANDS="source /opt/ros/humble/setup.bash && source install/setup.bash"
 
-# launch gopro node
-tmux new-window -d -t ros2-xarm -n "gopro"
-tmux send-keys -t "ros2-xarm:gopro" "$SOURCE_COMMANDS" C-m
-tmux send-keys -t "ros2-xarm:gopro" "ros2 launch camera_cpp go_pro_launch.py" C-m
+# launch gopro node (not needed because listed in requirements of detector node)
+#tmux new-window -d -t ros2-xarm -n "gopro"
+#tmux send-keys -t "ros2-xarm:gopro" "$SOURCE_COMMANDS" C-m
+#tmux send-keys -t "ros2-xarm:gopro" "ros2 launch camera_cpp go_pro_launch.py" C-m
 
 # launch planning node
 tmux new-window -d -t ros2-xarm -n "planning"
