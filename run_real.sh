@@ -20,6 +20,10 @@ else
     if [[ "$(tmux capture-pane -p -t "gopro-process:gopro-webcam" | grep -q "Error while starting the Webcam mode")" == "0" ]]; then
         echo "GoPro server may have failed to start. Check it out at 'tmux attach-session -t gopro-process'"
         exit 1
+    elif [[ "$(tmux capture-pane -p -t "gopro-process:gopro-webcam" | grep -q "v4l2loopback could not be unloaded")" == "0" ]]; then
+        echo "Error starting the GoPro server, likely because it didn't get shut down correctly last time."
+        echo "Try 'sudo fuser -v /dev/video*' to see what processes are using the video devices, and 'sudo killall -9 <process_name>' to kill whatever is using 42."
+        exit 1
     fi
     tmux new-window -d -t gopro-process -n ffmpeg-stream
     sleep 5 # give the webcam time to get started, because otherwise it will race with ffmpeg for access to a library
