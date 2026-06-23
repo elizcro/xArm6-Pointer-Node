@@ -12,16 +12,18 @@ if tmux has-session -t "gopro-process"; then
 else
     echo "No GoPro server is running. Starting a new session..."
     tmux new-session -d -s "gopro-process"
-    tmux send-keys -t "gopro-process" "echo \"Enter your password, then press Ctrl-B, then d to exit\"" C-m
+    tmux send-keys -t "gopro-process:gopro-webcam" "echo \"Enter your password, then press Ctrl-B, then d to exit\"" C-m
     # taken from the launch script in the GoPro-ROS2 node (scripts/webcam_service.sh)
-    tmux send-keys -t "gopro-process" "sudo gopro webcam -n -p enp*; tmux wait-for -S \"gopropwd\" && ffmpeg -nostdin -threads 1 -i 'udp://@0.0.0.0:8554?overrun_nonfatal=1&fifo_size=50000000' -f:v mpegts -fflags nobuffer -vf format=yuv420p -f v4l2 /dev/video42" C-m
-    tmux attach-session -t "gopro-process"
-    tmux wait-for "gopropwd"
+    tmux new-window -d -t gopro-process -n gopro-webcam
+    tmux send-keys -t "gopro-process:gopro-webcam" "sudo gopro webcam -n -p enp*" C-m
+    tmux attach-session -t "gopro-process:gopro-webcam"
     if [[ "$(tmux capture-pane -p -t "session_name:window.pane" | grep -q "Error while starting the Webcam mode")" == "0" ]]; then
         echo "GoPro server may have failed to start. Check it out at 'tmux attach-session -t gopro-process'"
         exit 1
     fi
-    echo "GoPro server is now running. You can attach to it using 'tmux attach-session -t gopro-process'"
+    tmux new-window -d -t gopro-process -n ffmpeg-stream
+    tmux send-keys -t "gopro-process:ffmpeg-stream" "ffmpeg -nostdin -threads 1 -i 'udp://@0.0.0.0:8554?overrun_nonfatal=1&fifo_size=50000000' -f:v mpegts -fflags nobuffer -vf format=yuv420p -f v4l2 /dev/video42" C-m
+    echo "GoPro server (and ffmpeg) is now running. You can attach to it using 'tmux attach-session -t gopro-process'"
 fi
 
 # kill any existing session that exists
