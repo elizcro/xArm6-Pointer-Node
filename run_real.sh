@@ -12,9 +12,9 @@ if tmux has-session -t "gopro-process"; then
 else
     echo "No GoPro server is running. Starting a new session..."
     tmux new-session -d -s "gopro-process"
+    tmux new-window -d -t gopro-process -n gopro-webcam
     tmux send-keys -t "gopro-process:gopro-webcam" "echo \"Enter your password, then press Ctrl-B, then d to exit\"" C-m
     # taken from the launch script in the GoPro-ROS2 node (scripts/webcam_service.sh)
-    tmux new-window -d -t gopro-process -n gopro-webcam
     tmux send-keys -t "gopro-process:gopro-webcam" "sudo gopro webcam -n -p enp*" C-m
     tmux attach-session -t "gopro-process:gopro-webcam"
     if [[ "$(tmux capture-pane -p -t "session_name:window.pane" | grep -q "Error while starting the Webcam mode")" == "0" ]]; then
