@@ -22,6 +22,7 @@ else
         exit 1
     fi
     tmux new-window -d -t gopro-process -n ffmpeg-stream
+    sleep 5 # give the webcam time to get started, because otherwise it will race with ffmpeg for access to a library
     tmux send-keys -t "gopro-process:ffmpeg-stream" "ffmpeg -nostdin -threads 1 -i 'udp://@0.0.0.0:8554?overrun_nonfatal=1&fifo_size=50000000' -f:v mpegts -fflags nobuffer -vf format=yuv420p -f v4l2 /dev/video42" C-m
     echo "GoPro server (and ffmpeg) is now running. You can attach to it using 'tmux attach-session -t gopro-process'"
 fi
