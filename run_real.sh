@@ -17,7 +17,7 @@ else
     # taken from the launch script in the GoPro-ROS2 node (scripts/webcam_service.sh)
     tmux send-keys -t "gopro-process:gopro-webcam" "sudo gopro webcam -n -p enp*" C-m
     tmux attach-session -t "gopro-process:gopro-webcam"
-    if [[ "$(tmux capture-pane -p -t "session_name:window.pane" | grep -q "Error while starting the Webcam mode")" == "0" ]]; then
+    if [[ "$(tmux capture-pane -p -t "gopro-process:gopro-webcam" | grep -q "Error while starting the Webcam mode")" == "0" ]]; then
         echo "GoPro server may have failed to start. Check it out at 'tmux attach-session -t gopro-process'"
         exit 1
     fi
