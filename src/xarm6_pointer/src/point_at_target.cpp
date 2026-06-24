@@ -41,6 +41,8 @@
 #include <shape_msgs/msg/solid_primitive.hpp>
 
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/empty.hpp>
+
 
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -87,7 +89,7 @@ int main(int argc, char ** argv)
   const std::string ee_link = get_str("ee_link", "tool_tip");
   const std::string target_topic = get_str("target_topic", "target_point");
 
-  const double standoff = get_double("standoff_distance", 0.15);  // m, tool stops this far from target
+  const double standoff = get_double("standoff_distance", 0.7);  // m, tool stops this far from target
   const double min_reach = get_double("min_reach", 0.10);         // m, min EE distance from base origin
   const double max_reach = get_double("max_reach", 0.65);         // m, max EE distance (xArm6 reach ~0.70)
   const double vel_scale = get_double("vel_scale", 0.05);          // 0..1
@@ -196,6 +198,7 @@ int main(int argc, char ** argv)
   // ---- Shared state between subscription callback and main loop -----------
   std::mutex mtx;
   std::optional<geometry_msgs::msg::PointStamped> pending;
+  bool home_requested = false; // <-- set by the /pointer/home callback
 
   [[maybe_unused]] auto sub = node->create_subscription<geometry_msgs::msg::PointStamped>(
     target_topic, 10,
@@ -206,6 +209,13 @@ int main(int argc, char ** argv)
       msg->point.y /= 100.0;
       msg->point.z /= 100.0;
       pending = *msg;  // keep only the latest; ignore backlog while moving
+    });
+    
+  [[maybe_unused]] auto home_sub = node->create_subscription<std_msgs::msg::Empty>(
+    "pointer/home", 10,
+    [&mtx, &home_requested](std_msgs::msg::Empty::SharedPtr) {
+      std::lock_guard<std::mutex> lk(mtx);
+      home_requested = true;
     });
 
   auto result_pub = node->create_publisher<std_msgs::msg::Bool>("/pointer/result", 10);
@@ -357,25 +367,62 @@ int main(int argc, char ** argv)
 
     if (executed) {
       RCLCPP_INFO(LOGGER, "Done. End-effector is pointing at the target.");
+      rclcpp::sleep_for(std::chrono::milliseconds(1500));
     } else {
       RCLCPP_WARN(LOGGER, "Execution did not report success. Check the robot/controllers.");
     }
     publish_result(executed);
+  };
+  
+  auto go_home = [&]() {
+    RCLCPP_INFO(LOGGER, "Returning to home position ...");
+    move_group.setStartStateToCurrentState();
+    move_group.clearPoseTargets();
+
+    // Home is an end-effector POSITION goal (orientation left free for IK).
+    // Your (0, 40, 30) cm is (0.00, 0.40, 0.30) m in link_base.
+    const double deg = M_PI / 180.0;
+    move_group.setJointValueTarget(std::vector<double>{
+      87.8  * deg,   // J1
+      -1.4  * deg,   // J2
+      -2.5  * deg,   // J3
+      179.5 * deg,   // J4
+      130.3 * deg,   // J5
+      -12.2 * deg    // J6
+    });
+
+    moveit::planning_interface::MoveGroupInterface::Plan plan;   // was  :Plan
+    if (move_group.plan(plan) != moveit::core::MoveItErrorCode::SUCCESS) {
+      RCLCPP_WARN(LOGGER, "Could not plan a path to the home position.");  // was RCLCPP(
+      return;
+    }
+    if (move_group.execute(plan) == moveit::core::MoveItErrorCode::SUCCESS) {  // was moveiit
+      RCLCPP_INFO(LOGGER, "Home position reached.");
+    } else {
+      RCLCPP_WARN(LOGGER, "Home move did not report success.");
+    }
+    move_group.clearPoseTargets();
   };
 
   // ---- Main loop: process the most recent target, one at a time -----------
   rclcpp::Rate rate(10.0);
   while (rclcpp::ok()) {
     std::optional<geometry_msgs::msg::PointStamped> t;
+    bool do_home = false;
     {
       std::lock_guard<std::mutex> lk(mtx);
       if (pending) {
         t = pending;
         pending.reset();
+      } else if (home_requested) {
+        home_requested = false;
+        do_home = true;
       }
     }
     if (t) {
       process(*t);
+    } else if (do_home) {
+      go_home();
     }
     rate.sleep();
   }
