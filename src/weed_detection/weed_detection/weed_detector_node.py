@@ -121,6 +121,7 @@ class WeedDetectorNode(Node):
             self.point_readings,
             min_fraction=self.dbscan_min_fraction,
             eps=self.dbscan_eps,
+            logger=self.get_logger(),
         )
         self.point_readings = []
 

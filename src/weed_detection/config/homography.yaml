@@ -6,6 +6,6 @@ weed_detector:
     ground_plane_z: -84.0
     # downward angle of camera from pointing straight (parallel to ground)
     camera_angle_deg: 35.0
-    cluster_interval: 20
-    dbscan_eps: 5.0
+    cluster_interval: 5
+    dbscan_eps: 12.0
     dbscan_min_fraction: 0.8

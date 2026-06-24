@@ -1,6 +1,40 @@
 import cv2
 import numpy as np
 
+def merge_close_boxes(bboxes: np.ndarray, gap: int = 40) -> np.ndarray:
+    """Merge boxes whose rectangles are within `gap` px in both axes.
+
+    Collapses leaf-blobs of one plant (small gap) into a single box while leaving
+    distinct plants (large gap) separate. In/out are (N, 4) as (x, y, w, h).
+    """
+    if bboxes.shape[0] <= 1:
+        return bboxes
+
+    boxes = [[int(x), int(y), int(x + w), int(y + h)] for (x, y, w, h) in bboxes]
+    changed = True
+    while changed:
+        changed = False
+        out, used = [], [False] * len(boxes)
+        for i in range(len(boxes)):
+            if used[i]:
+                continue
+            ax1, ay1, ax2, ay2 = boxes[i]
+            for j in range(i + 1, len(boxes)):
+                if used[j]:
+                    continue
+                bx1, by1, bx2, by2 = boxes[j]
+                dx = max(0, max(ax1, bx1) - min(ax2, bx2))
+                dy = max(0, max(ay1, by1) - min(ay2, by2))
+                if dx <= gap and dy <= gap:
+                    ax1, ay1 = min(ax1, bx1), min(ay1, by1)
+                    ax2, ay2 = max(ax2, bx2), max(ay2, by2)
+                    used[j] = changed = True
+            used[i] = True
+            out.append([ax1, ay1, ax2, ay2])
+        boxes = out
+
+    return np.array([[x1, y1, x2 - x1, y2 - y1] for (x1, y1, x2, y2) in boxes],
+                    dtype=bboxes.dtype)
 
 def segment_and_box_green(bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Segment green vegetation and return (binary_mask, bounding_boxes).
@@ -35,8 +69,8 @@ def segment_and_box_green(bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     kept_stats = stats[1:][keep]
     bboxes = kept_stats[:, :4]
+    bboxes = merge_close_boxes(bboxes, gap=40)
 
     mask = np.clip(mask, 0, 1).astype(np.uint8)
     
-
     return mask, bboxes
