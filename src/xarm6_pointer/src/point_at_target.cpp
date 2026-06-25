@@ -92,8 +92,8 @@ int main(int argc, char ** argv)
   const double standoff = get_double("standoff_distance", 0.7);  // m, tool stops this far from target
   const double min_reach = get_double("min_reach", 0.10);         // m, min EE distance from base origin
   const double max_reach = get_double("max_reach", 0.65);         // m, max EE distance (xArm6 reach ~0.70)
-  const double vel_scale = get_double("vel_scale", 0.05);          // 0..1
-  const double acc_scale = get_double("acc_scale", 0.1);          // 0..1
+  const double vel_scale = get_double("vel_scale", 0.9);          // 0..1
+  const double acc_scale = get_double("acc_scale", 0.25);          // 0..1
   const double planning_time = get_double("planning_time", 2.0); // s per roll sample
   const int planning_attempts = static_cast<int>(get_double("planning_attempts", 10.0));
   const double goal_pos_tol = get_double("goal_pos_tol", 0.01);       // m
