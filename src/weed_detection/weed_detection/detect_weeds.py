@@ -16,7 +16,7 @@ def detect_weeds(img: np.ndarray) -> np.ndarray:
     return centers
 
 
-def choose_weeds(samples: list[np.ndarray], min_fraction: float = 0.8, eps: float = 5.0) -> np.ndarray:
+def choose_weeds(samples: list[np.ndarray], min_fraction: float = 0.8, eps: float = 5.0, logger=None) -> np.ndarray:
     """Cluster detections across multiple frames with DBSCAN.
 
     Returns (M, 2) array of cluster centroids in pixel coordinates.
