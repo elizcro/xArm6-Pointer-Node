@@ -16,12 +16,14 @@ class WeedDetectorNode(Node):
 
         self.declare_parameter('ground_plane_z', 0.0)
         self.declare_parameter('camera_angle_deg', 0.0)
+        self.declare_parameter('plant_height', 0.0)
         self.declare_parameter('cluster_interval', 20)
         self.declare_parameter('dbscan_eps', 5.0)
         self.declare_parameter('dbscan_min_fraction', 0.8)
 
         self.camera_angle_degrees = self.get_parameter('camera_angle_deg').get_parameter_value().double_value
         self.ground_z = self.get_parameter('ground_plane_z').get_parameter_value().double_value
+        self.plant_height = self.get_parameter('plant_height').get_parameter_value().double_value
         self.cluster_interval = self.get_parameter('cluster_interval').get_parameter_value().integer_value
         self.dbscan_eps = self.get_parameter('dbscan_eps').get_parameter_value().double_value
         self.dbscan_min_fraction = self.get_parameter('dbscan_min_fraction').get_parameter_value().double_value
@@ -70,7 +72,23 @@ class WeedDetectorNode(Node):
         result[:, 1] /= result[:, 2]
         result[:, 2] = self.ground_z
         return result
-        
+
+    def ground_to_real_plant_intersect(self, ground_points: np.ndarray) -> np.ndarray:
+        ground_dist_to_points = np.linalg.norm(ground_points[:, :2], axis=1)
+        assert ground_dist_to_points.shape == (ground_points.shape[0],), f"{ground_dist_to_points.shape = }, from {ground_points.shape = }"
+    
+        point_to_plant_dist = self.plant_height / -self.ground_z * ground_dist_to_points
+    
+        ground_angle = np.arctan2(ground_points[:, 1], ground_points[:, 0])
+        assert ground_angle.shape == (ground_points.shape[0],), f"{ground_angle.shape = }, from {ground_points.shape = }"
+    
+        point_to_plant_dist_x = point_to_plant_dist * np.cos(ground_angle)
+        point_to_plant_dist_y = point_to_plant_dist * np.sin(ground_angle)
+    
+        ground_points[:, 0] -= point_to_plant_dist_x
+        ground_points[:, 1] -= point_to_plant_dist_y
+        return ground_points
+
     def show_debug(self, bgr):
         debug = bgr.copy()
         
@@ -129,6 +147,7 @@ class WeedDetectorNode(Node):
             return
 
         ground_points = self.pixel_to_ground(clustered)
+        ground_points = self.ground_to_real_plant_intersect(ground_points)
         self.last_clustered = clustered
         self.last_ground = ground_points
         
