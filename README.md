@@ -10,9 +10,6 @@ Intended to be run on either the xArm **fake** MoveIt stack (RViz only) or the *
 
 ![System architecture](docs/architecture.png)
 
-> The diagram lives at `docs/architecture.png` in this repo. If you move it,
-> update the path above.
-
 The system is four subsystems connected by ROS topics:
 
 - **Camera pipeline** turns the GoPro into a rectified ROS image stream (see References)
