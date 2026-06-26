@@ -1,196 +1,219 @@
-# xarm6_pointer
+# xarm6_pointer + weed_detection
 
-A ROS 2 (Humble) package that uses **MoveIt 2** to aim a UFactory **xArm6**'s end‑effector tool at arbitrary 3‑D points in space. You publish a target point on a topic; the node computes a "look‑at" pose, solves the inverse kinematics through MoveIt, plans a collision‑free motion, and executes it on the simulated or real arm.
+A ROS 2 (Humble) system that detects weeds in a GoPro camera feed and aims a UFACTORY xArm6 tool at each one. First a vision pipeline finds plants on the ground using color detection and converts their image positions into real-world coordinates. These positions are published as target points on a topic, and the pointer node computes a "look‑at" orientation, solves the inverse kinematics through MoveIt, plans a collision‑free motion, and executes it on the simulated or real arm.
 
-Intended to be run on either the xArm **fake** MoveIt stack (RViz only) or the **realmove** stack (physical arm over Ethernet).
-
----
-
-## What it does
-
-Given a 3‑D target, point the **tool's +Z axis** at it from a configurable *standoff* distance, without touching the target and without colliding with the robot's own body or the mounting structure.
-
----
-
-## How it works
-
-The package is, at its core, an **inverse‑kinematics (IK) problem wrapped in a task‑space goal generator**. For context:
-
-- **Inverse kinematics (IK)**: given a desired pose `T*`, find joint angles `q` such that `T(q) = T*`. Unlike Forward Kinematics, IK can have **no solution** (target outside the reachable workspace), a **finite set** of solutions (a generic 6‑DOF pose for a 6R arm admits up to eight discrete configurations — elbow up/down, wrist flips, etc.), or **infinitely many** (when the task under‑constrains the arm).
-
-This package never writes its own IK solver — it constructs the *target pose* and hands it to MoveIt, which runs the configured kinematics plugin. What the package contributes is the geometry that turns a bare point into a well‑posed pose, plus the recognition that **pointing is a deliberately under‑constrained task**.
-
-### 1. From a point to a pointing direction
-
-The subscriber receives a `geometry_msgs/PointStamped` and converts it from centimeters to meters (see [Units](#coordinate-conventions-and-units)). The target is treated as a vector from the base origin, and the pointing direction is the unit vector along it:
-
-```
-n̂ = target / ‖target‖
-```
-
-`n̂` is the direction the tool's +Z axis should point. This is the "ray" model: the tool is aimed **along the base‑origin → target ray**.
-
-### 2. Standoff and a reachable‑workspace pre‑check
-
-The end‑effector is placed a fixed `standoff` distance short of the target, on that same ray:
-
-```
-ee_pos = target − n̂ · standoff
-```
-
-Before any IK or planning is attempted, `ee_pos` is checked against a coarse **reachable‑workspace envelope** — its Euclidean distance from the base origin must lie in `[min_reach, max_reach]`. This is a conservative way to reject obviously unreachable targets (the manipulator's reach is a bounded annulus around the base) before a full IK/planning call.
-
-### 3. The look‑at orientation (constructing a rotation in SO(3))
-
-A pointing task fixes which way +Z points, but a single direction does not define a full orientation — a rotation in `SO(3)` needs three independent parameters. The node builds a valid orientation by **Gram‑Schmidt orthogonalization** against a reference "up" vector:
-
-```
-x̂ = up × n̂          (perpendicular to both)
-ŷ = n̂ × x̂           (completes the right‑handed frame)
-R  = [ x̂ | ŷ | n̂ ]   (columns are the tool axes in base coordinates)
-```
-
-`R` is then converted to a quaternion `base_q`. The reference `up` is the world +Z, switched to world +X when `n̂` is within ~18° of vertical to avoid the degeneracy where `up × n̂` collapses to zero. `base_q` is the look‑at orientation with **roll = 0** about the pointing axis.
-
-### 4. Roll is a free DOF — the task is functionally redundant
-
-Aiming a tool at a point constrains only *five* degrees of freedom: three for position and two for the pointing direction. *Rotation about the pointing axis itself (roll) does not change where the tool points.* So even though the xArm6 is a non‑redundant 6‑DOF arm, the *pointing task* leaves a one‑parameter family of equally valid end‑effector orientations — roll is the redundant coordinate with respect to this task.
-
-The node exploits that redundancy to find a configuration that is not only reachable but *collision‑free*. It samples `roll_samples` roll angles evenly over a full turn and, for each, composes the orientation in the **tool frame**:
-
-```
-q = base_q * q_roll        (intrinsic roll about the tool's own +Z)
-```
-
-The order matters: `base_q * q_roll` rotates about the tool axis; the reverse would rotate about the world axis and change the aim. Each `(ee_pos, q)` pair is a fully specified `SE(3)` pose handed to MoveIt. The *first roll* that yields a valid, collision‑free plan is executed.
-
-### 5. MoveIt solves the IK and plans the motion
-
-For each candidate pose, MoveIt:
-
-1. Runs its **kinematics plugin** (KDL by default on most xArm configs — a numerical, Jacobian‑based solver) to find joint angles realizing the pose within the goal tolerances
-2. Uses **OMPL / RRTConnect** (a sampling‑based, bidirectional rapidly‑exploring random tree) to plan a collision‑free joint‑space path from the current state to that IK solution, checking joint limits, self‑collision (via the SRDF), and the added scene objects along the way.
-
-`plan()` and `execute()` are kept strictly separate — the arm only moves when a plan has already succeeded.
-
-> **IK solver note.** Numerical solvers like KDL can fail to satisfy a tightly toleranced *orientation* goal even when one exists, because they get trapped in local minima. The node ships a `position_only` diagnostic mode that drops the orientation goal: if planning succeeds with `position_only:=true` but fails with full orientation, the kinematics plugin is the bottleneck, and switching to **TRAC‑IK** (a drop‑in plugin with better convergence on orientation‑constrained goals) is the usual fix.
-
-### 6. Precision and the orientation tolerance
-
-Because roll is supplied by the **roll sweep** (step 4), the goal **orientation tolerance must be kept tight** (`goal_orient_tol = 0.01 rad`). `MoveIt::setGoalOrientationTolerance()` applies its value about all three axes, so a *loose* value would not just free roll — it would let the achieved pointing axis itself drift, and because OMPL is non‑deterministic, every run would land somewhere different inside that tolerance ball. A loose 0.2 rad tolerance projects to roughly `0.2 × distance` of error downrange (≈ 40 cm at 2 m); the tight value collapses that to ≈ 2 cm. Keep this parameter tight for any task where repeatable aim matters.
+Intended to be run on either the xArm **fake** MoveIt stack (RViz only) or the **realmove** stack (physical xArm over Ethernet).
 
 ---
 
 ## Architecture
 
-The package runs as **three terminals**. Whichever process launches `move_group` owns the URDF/SRDF, so anything that changes the robot model (e.g. adding the tool) must go to **Terminal 1**, not the node's launch file.
+![System architecture](docs/architecture.png)
 
-```mermaid
-flowchart TD
-    pub["Target publisher (Terminal 3)<br/>geometry_msgs/PointStamped, in cm"]
-    pub -->|"/target_point"| node
+> The diagram lives at `docs/architecture.png` in this repo. If you move it,
+> update the path above.
 
-    subgraph T2["Terminal 2 — your package"]
-        node["xarm6_pointer node (point_at_target)<br/>cm to m, look-at orientation,<br/>standoff + reach check,<br/>roll sweep, plan then execute"]
-    end
+The system is four subsystems connected by ROS topics:
 
-    node -->|"MoveGroupInterface: plan / execute"| mg
-    node -->|"PlanningSceneInterface: pedestal + wall"| mg
-
-    subgraph T1["Terminal 1 — MoveIt 2"]
-        mg["move_group<br/>kinematics plugin (IK),<br/>OMPL RRTConnect,<br/>planning scene + collision check"]
-    end
-
-    mg -->|"joint trajectory"| ctrl
-    ctrl["ros2_control to xArm6<br/>fake controllers (sim)<br/>or real arm @ 192.168.1.213"]
-```
-
-| Terminal | Launches | Role |
-|---|---|---|
-| **1** | `planning_env.launch.py` (wraps the xArm `fake`/`realmove` stack) | Starts `move_group`, RViz, and `ros2_control`. Loads the URDF/SRDF **with the tool** via the xArm `add_other_geometry` mechanism. |
-| **2** | `pointer_node.launch.py` | Starts the `point_at_target` node with the MoveIt configuration and pointing parameters. Builds its own MoveIt config only to pass parameters — it does **not** determine the URDF `move_group` uses. |
-| **3** | `ros2 topic pub …` | Publishes target points on `/target_point`. |
+- **Camera pipeline** turns the GoPro into a rectified ROS image stream (see References)
+- **Weed detection** (`weed_detector_node`) finds plants and publishes their ground coordinates
+- **Sequencer** (`weed_sequencer_node`) hands the arm one weed at a time.
+- **xArm pointer** (`point_at_target`) plans and executes a pointing motion, then reports back
 
 ---
 
-## Dependencies
+## How it works
 
-- **Ubuntu 22.04**, **ROS 2 Humble**
-- **MoveIt 2**: `sudo apt install ros-humble-moveit`
-- **xarm_ros2** (provides `xarm_moveit_config` and `uf_ros_lib` / `MoveItConfigsBuilder`), cloned into your workspace `src/`
-- **Gazebo Classic 11** for simulation
+#### 1. Camera Pipeline
+
+The GoPro is put into webcam mode and streamed into a virtual video device, which a small C++ node republishes as a ROS image. This node was provided by @sandeepzachariah (see references)
+
+### 2. Weed detection — `weed_detector_node`
+
+Subscribes to the rectified image and builds detections over time rather than trusting any single frame:
+
+- **`detect_weeds` (every frame)** —
+  segments green vegetation (`segment_and_box_green`: an HSV color gate intersected with an excess-green check, cleaned up with morphological open/close and box-merging so each plant becomes one box), then
+  returns the center pixel of each box.
+- **`choose_weeds` (every `cluster_interval` frames)** —
+  pools the centers from the window and runs **DBSCAN**. A real plant appears in the same spot across most frames and forms a tight cluster; flickering background reflections stay
+  scattered and are discarded as noise.
+- **`pixel_to_ground`** —
+  converts each surviving cluster from pixels to real-world coordinates (centimeters) on the ground plane, using the camera intrinsics and
+  geometry (height + tilt).
+
+The result is published as a `PoseArray` (in cm, `link_base` frame) on
+`/detected_weeds`.
+
+### 3. Sequencer — `weed_sequencer_node`
+
+The detector can publish a new batch periodically, but the arm services one weed at a time. The sequencer accepts a batch, queues the weeds, and sends the first
+on `/target_point`. It waits for the arm's `/pointer/result` before sending the next, and signals `/pointer/home` when the batch is finished.
+
+### 4. xArm pointer — `point_at_target`
+
+Receives a target on `/target_point` (centimeters, `link_base` frame) and:
+1. Converts from centimeters to meters. The target is treated as a vector from the base origin, and the pointing direction is the unit vector along it:
+    ```
+    n̂ = target / ‖target‖
+    ```
+    `n̂` is the direction the tool's +Z axis should point. This is the "ray" model: the tool is aimed **along the base‑origin → target ray**.
+
+2. Computes a **standoff** pose — the end‑effector is placed a fixed `standoff` distance short of the target, on that same ray:
+    ```
+    ee_pos = target − n̂ · standoff
+    ```  
+    it stops a fixed distance short of the weed and aims the tool's **+Z axis** at it (a "look-at" orientation). 
+
+3. Checks that the standoff pose is inside the arm's **reachable‑workspace envelope** — its Euclidean distance from the base origin must lie in `[min_reach, max_reach]`.
+
+4. A pointing task fixes which way +Z points, but a single direction does not define a full orientation — a rotation in `SO(3)` needs three independent parameters. The node builds a valid orientation by **Gram‑Schmidt     orthogonalization** against a reference "up" vector:
+    ```
+    x̂ = up × n̂          (perpendicular to both)
+    ŷ = n̂ × x̂           (completes the right‑handed frame)
+    R  = [ x̂ | ŷ | n̂ ]   (columns are the tool axes in base coordinates)
+    ```
+   `R` is then converted to a quaternion `base_q`. The reference `up` is the world +Z, switched to world +X when `n̂` is within ~18° of vertical to avoid the degeneracy where `up × n̂` collapses to zero.
+   `base_q` is the look‑at orientation with **roll = 0** about the pointing axis.
+
+6. For each candidate pose, MoveIt:
+    1. Runs its **kinematics plugin** (KDL by default on most xArm configs — a numerical, Jacobian‑based solver) to find joint angles realizing the pose within the goal tolerances
+    2. Uses **OMPL / RRTConnect** (a sampling‑based, bidirectional rapidly‑exploring random tree) to plan a collision‑free joint‑space path from the current state to that IK solution, checking joint limits, self‑collision         (via the SRDF), and the added scene objects along the way.Plans a collision-free path with **MoveIt / OMPL**, sampling several roll angles about the pointing axis (rolling the tool doesn't change where it points, but         can dodge obstacles or joint limits). Pedestal and wall collision objects keep the arm clear of the rig.
+
+7. Executes at the configured velocity/acceleration scaling and reports success/failure on `/pointer/result`.
 
 ---
+
+## ROS topics
+
+| Topic | Type | Direction | Notes |
+|---|---|---|---|
+| `/go_pro/image_raw` | `sensor_msgs/Image` | camera → image_proc | raw frames |
+| `/go_pro/image_rect_color` | `sensor_msgs/Image` | image_proc → detector | rectified |
+| `/go_pro/camera_info` | `sensor_msgs/CameraInfo` | image_proc → detector | intrinsics |
+| `/detected_weeds` | `geometry_msgs/PoseArray` | detector → sequencer | weeds in cm, `link_base` |
+| `/target_point` | `geometry_msgs/PointStamped` | sequencer → pointer | **centimeters**, `link_base` |
+| `/pointer/result` | `std_msgs/Bool` | pointer → sequencer | success/failure handshake |
+| `/pointer/home` | `std_msgs/Empty` | sequencer → pointer | park the arm |
+
+> **Units:** `/target_point` is in **centimeters** and the pointer node divides
+> by 100 internally. Ground-level targets use `z = -84` (the ground is ~0.84 m
+> below the arm base).
 
 ## Build
 
 ```bash
 cd ~/xarm_ws
-colcon build --packages-select xarm6_pointer
+colcon build --symlink-install
 source install/setup.bash
 ```
 
----
-
 ## Usage
 
-### Simulation (RViz, fake controllers)
+### Option A — the helper script
+
+`run_real.sh` starts the GoPro webcam + ffmpeg stream and launches the three ROS
+stacks in `tmux` windows:
 
 ```bash
-# Terminal 1 — MoveIt stack with the tool integrated into the model
-ros2 launch xarm6_pointer planning_env.launch.py
+    ./run_real.sh
+    # attach to view logs:
+    tmux attach-session -t ros2-xarm     # Ctrl-B p / n to switch windows
+```
 
-# Terminal 2 — the pointer node
-ros2 launch xarm6_pointer pointer_node.launch.py ee_link:=other_geometry_link
+### Option B — manual, step by step
 
-# Terminal 3 — publish a target (values are in centimetres; see Units)
-ros2 topic pub --rate 2 --times 3 /target_point geometry_msgs/msg/PointStamped \
+#### 1. GoPro → virtual webcam device
+```bash
+    sudo gopro webcam -n -p enp* ffmpeg -nostdin -threads 1 -i 'udp://@0.0.0.0:8554?overrun_nonfatal=1&fifo_size=50000000' \
+  -f:v mpegts -fflags nobuffer -vf format=yuv420p -f v4l2 /dev/video42
+```
+
+##### 2. Planning environment + real robot connection
+```bash
+    ros2 launch xarm6_pointer planning_env.launch.py is_live:=true robot_ip:=192.168.1.213
+```
+
+##### 3. Pointer (control) node
+```bash
+    ros2 launch xarm6_pointer pointer_node.launch.py controllers_name:=controllers
+```
+
+#### 4. Weed detection + sequencer (also brings up the GoPro + image_proc nodes)
+```bash
+    ros2 launch weed_detection weed_detection.launch.py
+```
+
+### Option C - Run xArm Pointer in RViz
+
+#### 1. MoveIt stack with the tool integrated into the model
+```bash
+    ros2 launch xarm6_pointer planning_env.launch.py
+```
+
+#### 2. The pointer node
+```bash
+    ros2 launch xarm6_pointer pointer_node.launch.py ee_link:=other_geometry_link
+```
+
+#### 3. Publish a target (centimeters; see Units)
+```bash
+    ros2 topic pub --rate 2 --times 3 /target_point geometry_msgs/msg/PointStamped \
   "{header: {frame_id: 'link_base'}, point: {x: 50, y: 0.0, z: 30}}"
 ```
 
-### Real robot
+Once all four are up, the detector will publish weeds, the sequencer will queue them, and the arm will point at each in turn before returning home.
 
-```bash
-# Terminal 1
-ros2 launch xarm6_pointer planning_env.launch.py is_live:=true robot_ip:=192.168.1.213
+## Configuration
 
-# Terminal 2
-ros2 launch xarm6_pointer pointer_node.launch.py \
-  controllers_name:=controllers ee_link:=other_geometry_link
-```
-
-> Always test in simulation first. Keep velocity/acceleration scaling low (0.05–0.10) on the real arm and keep an E‑stop within reach.
-
----
-
-## Coordinate conventions and units
-
-- Targets are interpreted in the **`link_base`** frame.
-- **Targets are published in centimeters.** The subscription callback divides `x`, `y`, `z` by 100 to get meters, because the upstream tooling emits centimeters
-- The tool's **+Z axis** is the pointing axis; the look‑at orientation aligns +Z with the base→target ray
-
----
-
-## Parameters
-
-Defaults shown are the `pointer_node.launch.py` launch defaults.
+### Pointer node (`pointer_node.launch.py`)
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `standoff_distance` | `0.15` m | Distance the tool stops short of the target, along the pointing ray. |
-| `min_reach` / `max_reach` | `0.20` / `0.65` m | Reachable‑workspace envelope checked before planning (xArm6 reach ≈ 0.70 m). |
-| `vel_scale` / `acc_scale` | `0.1` / `0.1` | Velocity / acceleration scaling (0–1). Start slow. |
-| `goal_pos_tol` | `0.01` m | Goal position tolerance. |
-| `goal_orient_tol` | `0.01` rad | Goal orientation tolerance **about each axis** — keep tight (see [Precision](#6-precision-and-the-orientation-tolerance)). |
-| `planning_time` | `2.0` s | Max planning time per roll sample. |
-| `roll_samples` | `12` | Roll angles tried about the pointing axis (every 30°). |
-| `position_only` | `false` | Diagnostic: plan to EE position only, ignore orientation. |
-| `ee_link` | `other_geometry_link` | Tip link used for pointing. **Must match the link the xArm `add_other_geometry` adds** — verify against the loaded URDF. |
-| `tool_length` / `tool_radius` | `0.1651` / `0.01905` m | Cylindrical tool dimensions fed into `add_other_geometry`. |
-| `pedestal_size_{x,y,z}` | `0.762` / `1.524` / `0.8382` m | Pedestal collision box dimensions. |
-| `pedestal_offset_{x,y}` | `0.0127` / `-0.6858` m | Pedestal centre offset from the arm base. |
-| `wall_size_{x,y,z}` | `0.1` / `3.048` / `2.0` m | Wall collision box dimensions. |
-| `wall_offset_{x,y}` | `-0.3937` / `0.0` m | Wall centre offset from the arm base. |
+| `standoff_distance` | `0.7` | meters the tool stops short of the target |
+| `min_reach` / `max_reach` | `0.20` / `0.65` | EE distance-from-base envelope (m) |
+| `vel_scale` / `acc_scale` | `0.5` / `0.1` | trajectory speed/accel scaling (start slow) |
+| `goal_pos_tol` | `0.01` | goal position tolerance (m) |
+| `goal_orient_tol` | `0.01` | goal orientation tolerance (rad) — keep tight |
+| `roll_samples` | `12` | roll angles tried about the pointing axis |
+| `planning_time` | `2.0` | max planning time per roll sample (s) |
+| `tool_length` / `tool_radius` | `0.1651` / `0.01905` | mounted tool cylinder (m) |
+| `pedestal_*` / `wall_*` | see launch | collision-object size and offset |
+
+### Detector node (weed detection)
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `cluster_interval` | `20` | frames pooled before clustering |
+| `dbscan_eps` | `15.0` | cluster radius in pixels |
+| `dbscan_min_fraction` | `0.8` | fraction of frames a cluster must appear in |
+| `ground_plane_z` | — | ground height below the camera (cm, negative) |
+| `camera_angle_deg` | — | camera tilt |
+| `plant_height` | — | used for the leaf-to-stem correction |
+
+> **Tuning note:** `dbscan_eps` trades off splitting vs. merging. Too small and a
+> jittery plant fragments into noise and is dropped; too large and nearby plants
+> merge. Raise `dbscan_eps` (not lower `dbscan_min_fraction`) if a real plant is
+> being missed — lowering the fraction lets unstable background back in.
+
+## Calibration
+
+The pixel-to-ground mapping depends on the camera geometry (height, tilt, and
+intrinsics from `/go_pro/camera_info`). If reported positions are skewed —
+especially toward the edges of the image — re-verify the camera height and angle
+parameters and confirm the live feed resolution/FOV match what the camera was
+calibrated at. A reproject check (run known ground points through the mapping and
+compare against tape-measured truth) is the quickest way to quantify the error.
+
+## Debugging aids
+
+- The detector opens an OpenCV debug window (`debug_view`) overlaying the green
+  mask, per-frame boxes, and the published detections labeled with their ground
+  coordinates. On a headless machine, disable it or publish a debug image topic
+  instead.
+- `choose_weeds` logs the per-window cluster count, each cluster's size/centroid/
+  span, and the discarded noise — useful for seeing whether a missed plant is
+  being detected but failing to cluster.
 
 ---
 
@@ -207,12 +230,34 @@ The **tool** itself is *not* added here. It is integrated into the URDF and SRDF
 
 ---
 
+## Coordinate conventions and units
+
+- Targets are interpreted in the **`link_base`** frame.
+- **Targets are published in centimeters.** The subscription callback divides `x`, `y`, `z` by 100 to get meters, because the upstream tooling emits centimeters
+- The tool's **+Z axis** is the pointing axis; the look‑at orientation aligns +Z with the base→target ray
+
+---
+
+## Dependencies
+
+- **Ubuntu 22.04**, **ROS 2 Humble**
+- **MoveIt 2**: `sudo apt install ros-humble-moveit`
+- **xarm_ros2** (provides `xarm_moveit_config` and `uf_ros_lib` / `MoveItConfigsBuilder`), cloned into your workspace `src/`
+- **Gazebo Classic 11** for simulation
+- **image_proc**
+- **camera_cpp** (GoPro publisher node, in this workspace)
+- **Python**: `numpy`, `opencv-python` (`cv2`), `cv_bridge`, `scikit-learn` (DBSCAN)
+- **GoPro** tooling: the `gopro` webcam CLI, `ffmpeg`, and `v4l2loopback`
+- A **UFACTORY xArm6** reachable on the network
+
+---
+
 ## Known issues and gotchas
 
 - **Centimeter input.** The callback divides by 100. Publishing in metres gives 100× distances. (See [Units](#coordinate-conventions-and-units).)
 - **Verify `ee_link`.** After `add_other_geometry`, confirm the tip link name in the loaded URDF and pass it as `ee_link`. Check with:
 ```bash
-  ros2 param get /move_group robot_description | grep -oE 'link name="[^"]+"' | sort -u
+      ros2 param get /move_group robot_description | grep -oE 'link name="[^"]+"' | sort -u
 ```
 - **xArm onboard self‑collision (error C22).** The control box's self‑collision check is stricter than MoveIt's SRDF check and can halt a motion MoveIt approved (typically folded, behind‑the‑robot configurations). Recover via *Clear Error* in xArm Studio, hand‑guide to a neutral pose in Manual Mode, then restart the terminals. Avoid around‑the‑back targets; sequence through safe intermediate poses.
 - **Downward / ground targets.** In the "ray" model, `ee_pos` lies on the base→target ray, so points on the floor drive the end‑effector below the base (into the pedestal volume) or past the reach limit. Pointing at the ground generally requires approaching from *above* the target rather than along the base ray.
@@ -221,5 +266,6 @@ The **tool** itself is *not* added here. It is integrated into the URDF and SRDF
 ---
 
 ## References
+- GoPro-ROS2 package - <https://github.com/sandeepzachariah/GoPro-ROS2>
 - MoveIt 2 documentation — <https://moveit.picknik.ai/humble/>
 - OMPL — <https://ompl.kavrakilab.org/>
