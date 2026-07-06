@@ -34,6 +34,7 @@
 
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
+#include <moveit_msgs/msg/move_it_error_codes.hpp>
 
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/pose.hpp>
@@ -56,6 +57,24 @@ using std::placeholders::_1;
 namespace
 {
 const rclcpp::Logger LOGGER = rclcpp::get_logger("xarm6_pointer");
+
+std::string errCodeToString(const moveit::core::MoveItErrorCode& code)
+{
+  using MEC = moveit_msgs::msg::MoveItErrorCodes;
+  switch (code.val) {
+    case MEC::SUCCESS:                 return "SUCCESS";
+    case MEC::PLANNING_FAILED:         return "PLANNING_FAILED (planner found no path)";
+    case MEC::INVALID_MOTION_PLAN:     return "INVALID_MOTION_PLAN (bad/invalid goal states)";
+    case MEC::TIMED_OUT:               return "TIMED_OUT (no plan within planning_time)";
+    case MEC::START_STATE_IN_COLLISION:return "START_STATE_IN_COLLISION";
+    case MEC::GOAL_IN_COLLISION:       return "GOAL_IN_COLLISION";
+    case MEC::GOAL_CONSTRAINTS_VIOLATED:return "GOAL_CONSTRAINTS_VIOLATED";
+    case MEC::NO_IK_SOLUTION:          return "NO_IK_SOLUTION (goal pose not reachable)";
+    case MEC::CONTROL_FAILED:          return "CONTROL_FAILED";
+    case MEC::FAILURE:                 return "FAILURE (generic)";
+    default: return "UNKNOWN(" + std::to_string(code.val) + ")";
+  }
+}
 }
 
 int main(int argc, char ** argv)
@@ -89,7 +108,7 @@ int main(int argc, char ** argv)
   const std::string ee_link = get_str("ee_link", "tool_tip");
   const std::string target_topic = get_str("target_topic", "target_point");
 
-  const double standoff = get_double("standoff_distance", 0.7);  // m, tool stops this far from target
+  const double standoff = get_double("standoff_distance", 0.55);  // m, tool stops this far from target
   const double min_reach = get_double("min_reach", 0.10);         // m, min EE distance from base origin
   const double max_reach = get_double("max_reach", 0.65);         // m, max EE distance (xArm6 reach ~0.70)
   const double vel_scale = get_double("vel_scale", 0.9);          // 0..1
@@ -111,7 +130,7 @@ int main(int argc, char ** argv)
   const double wall_size_x = get_double("wall_size_x", 0.1);
   const double wall_size_y = get_double("wall_size_y", 3.048);
   const double wall_size_z = get_double("wall_size_z", 0.8382);
-  const double wall_offset_x = get_double("wall_offset_x", 0.0127);
+  const double wall_offset_x = get_double("wall_offset_x", -0.485);
   const double wall_offset_y = get_double("wall_offset_y", 0.0);
 
   // ---- Spin the node in the background so MoveGroupInterface works ---------
@@ -340,14 +359,15 @@ int main(int argc, char ** argv)
 
         move_group.clearPoseTargets();
         move_group.setPoseTarget(pose, ee_link);
-        if (move_group.plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+        moveit::core::MoveItErrorCode code = move_group.plan(plan);
+        if (code == moveit::core::MoveItErrorCode::SUCCESS) {
           RCLCPP_INFO(LOGGER, "Found a valid plan at roll %.0f deg (sample %d/%d).",
                       roll * 180.0 / M_PI, i + 1, n);
           planned = true;
           break;
         }
-        RCLCPP_INFO(LOGGER, "Roll %.0f deg: no valid plan, trying next ...",
-                    roll * 180.0 / M_PI);
+        RCLCPP_INFO(LOGGER, "Roll %.0f deg: no plan [%s], trying next ...",
+                    roll * 180.0 / M_PI, errCodeToString(code).c_str());
       }
     }
 
