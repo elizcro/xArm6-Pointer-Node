@@ -41,17 +41,21 @@ def segment_and_box_green(bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     bounding_boxes is shape (N, 4) with each row as (x, y, width, height).
     """
-    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV_FULL)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV_FULL) # hue 0-255 (FULL); thresholds below assume this scale
 
     exg_low = 13
-    exg_high = 200
+    exg_high = 510
+
     h_low = 50
-    h_high = 150
+    h_high = 110
     min_area = 100
 
     hsv_mask = cv2.inRange(hsv, (h_low, 60, 40), (h_high, 255, 255))
 
+    # for no overflow issues in the math
+    bgr = bgr.astype(np.uint16)
     exg = 2 * bgr[:, :, 1] - bgr[:, :, 2] - bgr[:, :, 0]
+
     exg_mask = cv2.inRange(exg, exg_low, exg_high)
 
     mask = hsv_mask & exg_mask
