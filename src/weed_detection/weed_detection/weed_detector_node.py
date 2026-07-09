@@ -15,18 +15,25 @@ class WeedDetectorNode(Node):
         super().__init__('weed_detector')
 
         self.declare_parameter('ground_plane_z', 0.0)
+        self.declare_parameter('camera_height', 0.0)
         self.declare_parameter('camera_angle_deg', 0.0)
         self.declare_parameter('plant_height', 0.0)
         self.declare_parameter('cluster_interval', 20)
         self.declare_parameter('dbscan_eps', 5.0)
         self.declare_parameter('dbscan_min_fraction', 0.8)
+        # offset of the center of the camera pinhole from the 0,0 of the arm
+        self.declare_parameter('camera_offset_x', 0.0)
+        self.declare_parameter('camera_offset_y', 0.0)
 
         self.camera_angle_degrees = self.get_parameter('camera_angle_deg').get_parameter_value().double_value
+        self.camera_height = self.get_parameter('camera_height').get_parameter_value().double_value
         self.ground_z = self.get_parameter('ground_plane_z').get_parameter_value().double_value
         self.plant_height = self.get_parameter('plant_height').get_parameter_value().double_value
         self.cluster_interval = self.get_parameter('cluster_interval').get_parameter_value().integer_value
         self.dbscan_eps = self.get_parameter('dbscan_eps').get_parameter_value().double_value
         self.dbscan_min_fraction = self.get_parameter('dbscan_min_fraction').get_parameter_value().double_value
+        self.camera_offset_x = self.get_parameter('camera_offset_x').get_parameter_value().double_value
+        self.camera_offset_y = self.get_parameter('camera_offset_y').get_parameter_value().double_value
 
         self.bridge = CvBridge()
         self.frame_count = 0
@@ -55,7 +62,7 @@ class WeedDetectorNode(Node):
         K_rect[[0, 1, 2, 2], [1, 0, 0, 1]] = 0
         K_rect[2, 2] = 1
 
-        h = -self.ground_z  # camera height above the ground plane (cm)
+        h = self.camera_height  # camera height above the ground plane (cm)
         a = np.deg2rad(self.camera_angle_degrees)
         ca, sa = np.cos(a), np.sin(a)
 
@@ -77,7 +84,7 @@ class WeedDetectorNode(Node):
         ground_dist_to_points = np.linalg.norm(ground_points[:, :2], axis=1)
         assert ground_dist_to_points.shape == (ground_points.shape[0],), f"{ground_dist_to_points.shape = }, from {ground_points.shape = }"
     
-        point_to_plant_dist = self.plant_height / -self.ground_z * ground_dist_to_points
+        point_to_plant_dist = self.plant_height / -self.camera_height * ground_dist_to_points
     
         ground_angle = np.arctan2(ground_points[:, 1], ground_points[:, 0])
         assert ground_angle.shape == (ground_points.shape[0],), f"{ground_angle.shape = }, from {ground_points.shape = }"
@@ -148,6 +155,9 @@ class WeedDetectorNode(Node):
 
         ground_points = self.pixel_to_ground(clustered)
         ground_points = self.ground_to_real_plant_intersect(ground_points)
+        # account for camera offset
+        ground_points[:, 0] += self.camera_offset_x
+        ground_points[:, 1] += self.camera_offset_y
         self.last_clustered = clustered
         self.last_ground = ground_points
         

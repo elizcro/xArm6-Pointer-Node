@@ -1,0 +1,26 @@
+image_width: 1920
+image_height: 1080
+camera_name: go_pro
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [930.45421,   0.     , 960.21579,
+           0.     , 929.18033, 540.71835,
+           0.     ,   0.     ,   1.     ]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, -0.0, 0.0, 0.000000]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1., 0., 0.,
+         0., 1., 0.,
+         0., 0., 1.]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [931.47601,   0.     , 961.22645,   0.     ,
+           0.     , 930.13812, 539.20295,   0.     ,
+           0.     ,   0.     ,   1.     ,   0.     ]
