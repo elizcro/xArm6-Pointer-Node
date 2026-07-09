@@ -84,7 +84,7 @@ class WeedDetectorNode(Node):
         ground_dist_to_points = np.linalg.norm(ground_points[:, :2], axis=1)
         assert ground_dist_to_points.shape == (ground_points.shape[0],), f"{ground_dist_to_points.shape = }, from {ground_points.shape = }"
     
-        point_to_plant_dist = self.plant_height / -self.camera_height * ground_dist_to_points
+        point_to_plant_dist = self.plant_height / self.camera_height * ground_dist_to_points
     
         ground_angle = np.arctan2(ground_points[:, 1], ground_points[:, 0])
         assert ground_angle.shape == (ground_points.shape[0],), f"{ground_angle.shape = }, from {ground_points.shape = }"
@@ -94,6 +94,7 @@ class WeedDetectorNode(Node):
     
         ground_points[:, 0] -= point_to_plant_dist_x
         ground_points[:, 1] -= point_to_plant_dist_y
+        ground_points[:, 2] += self.plant_height
         return ground_points
 
     def show_debug(self, bgr):
