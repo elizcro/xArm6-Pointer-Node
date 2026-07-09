@@ -127,7 +127,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time', default_value='false'),
 
         # Pointing geometry + safety envelope
-        DeclareLaunchArgument('standoff_distance', default_value='0.7',
+        DeclareLaunchArgument('standoff_distance', default_value='0.55',
                               description='Metres the tool stops short of the target'),
         DeclareLaunchArgument('min_reach', default_value='0.20',
                               description='Min allowed EE distance from base origin (m)'),
@@ -171,7 +171,7 @@ def generate_launch_description():
                               description='Wall y dimension in m)'),
         DeclareLaunchArgument('wall_size_z', default_value='2.0',
                               description='Wall height dimension in m)'),
-        DeclareLaunchArgument('wall_offset_x', default_value='-0.3937',
+        DeclareLaunchArgument('wall_offset_x', default_value='-0.485',
                               description='Wall center offset from arm base in X (m)'),
         DeclareLaunchArgument('wall_offset_y', default_value='0.0',
                               description='Wall center offset from arm base in Y (m)'),
