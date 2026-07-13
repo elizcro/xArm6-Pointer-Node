@@ -48,18 +48,20 @@ def segment_and_box_green(bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     h_low = 50
     h_high = 110
-    min_area = 100
+    min_area = 400
 
     hsv_mask = cv2.inRange(hsv, (h_low, 60, 40), (h_high, 255, 255))
 
-    # for no overflow issues in the math
-    bgr = bgr.astype(np.uint16)
-    exg = 2 * bgr[:, :, 1] - bgr[:, :, 2] - bgr[:, :, 0]
+    # signed math so negatives (non-green pixels) stay negative instead of wrapping
+    b = bgr[:, :, 0].astype(np.int16)
+    g = bgr[:, :, 1].astype(np.int16)
+    r = bgr[:, :, 2].astype(np.int16)
+    exg = 2 * g - r - b
 
     exg_mask = cv2.inRange(exg, exg_low, exg_high)
 
     mask = hsv_mask & exg_mask
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((21, 21), np.uint8))
 
     _, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
