@@ -65,7 +65,7 @@ def generate_launch_description():
             '/xarm6_traj_controller/joint_trajectory',
             'trajectory_msgs/msg/JointTrajectory',
             "{joint_names: ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'], "
-            "points: [{positions: [0.0, -0.1919, -0.33166, 0.0, 0.5236, 0.0], time_from_start: {sec: 0, nanosec: 500000000}}]}"
+            "points: [{positions: [1.5324, -0.0244, -0.0436, 3.1329, 2.2742, -0.2129], time_from_start: {sec: 0, nanosec: 500000000}}]}"
         ],
         output='screen'
     )
