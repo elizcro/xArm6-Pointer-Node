@@ -13,8 +13,6 @@
 //     self-collision checking, and (optionally) an added ground-plane
 //     collision object. If MoveIt cannot find a valid, collision-free plan,
 //     the node simply does NOT move the robot.
-//   * Velocity and acceleration are scaled down (default 10%) for slow,
-//     observable motion.
 //   * plan() and execute() are separate: we only execute a plan that
 //     succeeded.
 //
@@ -51,6 +49,12 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
+
+#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
+#include <moveit/planning_scene_monitor/current_state_monitor.h>
+#include <moveit/collision_detection/collision_common.h>
+#include <moveit/planning_scene/planning_scene.h>
+#include <set>
 
 using std::placeholders::_1;
 
@@ -141,8 +145,18 @@ int main(int argc, char ** argv)
   RCLCPP_INFO(LOGGER, "Connecting to move_group for planning group '%s' ...",
               planning_group.c_str());
 
+  // initialization 
   moveit::planning_interface::MoveGroupInterface move_group(node, planning_group);
   moveit::planning_interface::PlanningSceneInterface psi;
+  
+  auto psm =
+  std::make_shared<planning_scene_monitor::PlanningSceneMonitor>(
+      node, "robot_description");
+
+  psm->startSceneMonitor();
+  psm->startWorldGeometryMonitor();
+  psm->startStateMonitor();
+  // --------------- 
 
   move_group.setPoseReferenceFrame(planning_frame); // link_base
   move_group.setEndEffectorLink(ee_link); 	    // ee_link defaults to "tool_tip"
@@ -371,10 +385,139 @@ int main(int argc, char ** argv)
       }
     }
 
+    // failure diagnostics 
     if (!planned) {
-      RCLCPP_WARN(LOGGER,
-                  "MoveIt could not find a valid plan at any roll for this target "
-                  "(unreachable, joint limits, or collision). Not moving.");
+      RCLCPP_WARN(LOGGER, "No plan for this target. Diagnosing across all rolls ...");
+
+      moveit::core::RobotStatePtr state = move_group.getCurrentState(2.0);
+      const moveit::core::JointModelGroup* jmg =
+          state->getJointModelGroup(planning_group);
+
+      // Pull move_group's authoritative scene into our local monitor. The
+      // pedestal/wall were added via psi.applyCollisionObject(), which updates
+      // MOVE_GROUP's scene over /apply_planning_scene. Our psm never saw them,
+      // so without this fetch its world is EMPTY and collision checks below are
+      // self-collision only.
+      if (!psm->requestPlanningSceneState("/get_planning_scene")) {
+        RCLCPP_WARN(LOGGER, "requestPlanningSceneState failed; world objects may be "
+                            "missing -> collision results below are unreliable.");
+      }
+      psm->updateFrameTransforms();
+
+      // Sanity print: how many world objects the checker can actually see.
+      {
+        planning_scene_monitor::LockedPlanningSceneRO scene(psm);
+        const auto ids = scene->getWorld()->getObjectIds();
+        std::string names; for (const auto& id : ids) names += id + " ";
+        RCLCPP_WARN(LOGGER, "Diagnostic scene has %zu world object(s): %s",
+                    ids.size(), names.c_str());
+      }
+      
+      int ik_ok = 0, bounds_bad = 0, collide = 0;
+      int ik_fail = 0;
+      int reach_ok = 0;                       // reachable ignoring collision
+      std::set<std::string> colliding_bodies;
+      const int n = std::max(1, roll_samples);
+
+      for (int i = 0; i < n; ++i) {
+        const double roll = 2.0 * M_PI * i / n;
+        tf2::Quaternion q_roll; q_roll.setRPY(0.0, 0.0, roll);
+        tf2::Quaternion q = base_q * q_roll; q.normalize();
+        geometry_msgs::msg::Pose tp = pose;
+        tp.orientation.x = q.x(); tp.orientation.y = q.y();
+        tp.orientation.z = q.z(); tp.orientation.w = q.w();
+
+        // Lock the (now-populated) scene ONCE for this roll. scene_raw stays
+        // valid while `scene` is alive, so the IK collision callback and the
+        // contact enumeration both run inside this block (no nested locks).
+        planning_scene_monitor::LockedPlanningSceneRO scene(psm);
+        const planning_scene::PlanningSceneConstPtr scene_raw = scene; 
+
+        // Accept an IK solution only if it is collision-free (self + world).
+        // Passed into setFromIK so the solver actively SEARCHES for a
+        // non-colliding solution instead of returning the first/nearest one.
+        auto collision_free =
+          [scene_raw](moveit::core::RobotState* rs,
+                      const moveit::core::JointModelGroup* g,
+                      const double* vals) -> bool {
+            rs->setJointGroupPositions(g, vals);
+            rs->update();
+            return !scene_raw->isStateColliding(*rs, g->getName());
+          };
+
+        // (1) Reachability, collision ignored: does ANY IK solution exist?
+        bool reachable = false;
+        for (int a = 0; a < 5 && !reachable; ++a) {
+          if (a) state->setToRandomPositions(jmg);
+          reachable = state->setFromIK(jmg, tp, ee_link, 0.05);
+        }
+        if (!reachable) {
+          ++ik_fail;
+          RCLCPP_INFO(LOGGER, "Roll %.0f deg: unreachable (no IK, collision ignored).",
+                      roll * 180.0 / M_PI);
+          continue;
+        }
+        ++reach_ok;
+
+        // (2) Joint limits on that reachable solution (counted, not gating).
+        if (!state->satisfiesBounds(jmg)) ++bounds_bad;
+
+        // (3) Collision-aware IK: does a COLLISION-FREE solution exist?
+        bool ik_free = false;
+        for (int a = 0; a < 5 && !ik_free; ++a) {
+          if (a) state->setToRandomPositions(jmg);
+          ik_free = state->setFromIK(jmg, tp, ee_link, 0.10, collision_free);
+        }
+
+        if (ik_free) {
+          ++ik_ok;   // reachable AND collision-free -> a genuinely usable goal
+          RCLCPP_INFO(LOGGER, "Roll %.0f deg: collision-free IK found.",
+                      roll * 180.0 / M_PI);
+        } else {
+          ++collide; // reachable, but every solution we found collides
+          RCLCPP_INFO(LOGGER, "Roll %.0f deg: reachable but all IK solutions collide.",
+                      roll * 180.0 / M_PI);
+          // Capture WHICH bodies collide, using a concrete colliding solution.
+          if (state->setFromIK(jmg, tp, ee_link, 0.05)) {
+            collision_detection::CollisionRequest creq;
+            creq.contacts = true; creq.max_contacts = 50; creq.max_contacts_per_pair = 5;
+            collision_detection::CollisionResult cres;
+            scene_raw->checkCollision(creq, cres, *state);
+            for (const auto& c : cres.contacts) {
+              colliding_bodies.insert(c.first.first);
+              colliding_bodies.insert(c.first.second);
+            }
+          }
+        }
+      }
+
+      
+      RCLCPP_WARN(LOGGER, "Reachable (collision ignored): %d/%d rolls.", reach_ok, n);
+      RCLCPP_WARN(LOGGER, "Collision-free IK (usable):    %d/%d rolls.", ik_ok, n);
+      RCLCPP_WARN(LOGGER, "Unreachable:                   %d/%d rolls.", ik_fail, n);
+
+      if (reach_ok == 0) {
+        RCLCPP_WARN(LOGGER, "  CAUSE: no IK at any roll -> pose kinematically unreachable "
+                            "(orientation too steep / outside dexterous workspace).");
+      } else if (ik_ok == 0) {
+        std::string objs; for (const auto& o : colliding_bodies) objs += o + " ";
+        RCLCPP_WARN(LOGGER, "  CAUSE: every reachable IK solution is in collision. Bodies: %s",
+                    objs.empty() ? "(none captured)" : objs.c_str());
+        if (bounds_bad)
+          RCLCPP_WARN(LOGGER, "         (%d roll(s) also out of joint limits.)", bounds_bad);
+      } else {
+        RCLCPP_WARN(LOGGER, "  %d roll(s) have a collision-free, in-limits goal, yet plan() failed.",
+                    ik_ok);
+        if (collide) {
+          std::string objs; for (const auto& o : colliding_bodies) objs += o + " ";
+          RCLCPP_WARN(LOGGER, "  NOTE: %d roll(s) reachable-but-colliding. Bodies: %s",
+                      collide, objs.c_str());
+        }
+        RCLCPP_WARN(LOGGER, "  LIKELY: goal sampling isn't finding the collision-free branch, or "
+                            "the start state is invalid; raise planning_time / goal attempts, or "
+                            "plan to a joint-value goal seeded from the collision-free IK above.");
+      }
+
       move_group.clearPoseTargets();
       publish_result(false);
       return;
@@ -400,7 +543,7 @@ int main(int argc, char ** argv)
     move_group.clearPoseTargets();
 
     // Home is an end-effector POSITION goal (orientation left free for IK).
-    // Your (0, 40, 30) cm is (0.00, 0.40, 0.30) m in link_base.
+    // (0, 40, 30) cm is (0.00, 0.40, 0.30) m in link_base.
     const double deg = M_PI / 180.0;
     move_group.setJointValueTarget(std::vector<double>{
       87.8  * deg,   // J1
@@ -452,3 +595,5 @@ int main(int argc, char ** argv)
   rclcpp::shutdown();
   return 0;
 }
+
+
